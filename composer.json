@@ -1,0 +1,56 @@
+{
+    "name": "xoops/helpers",
+    "description": "Convention-over-configuration utility and service helpers for XOOPS CMS development",
+    "type": "library",
+    "license": "GPL-2.0-or-later",
+    "keywords": ["xoops", "helpers", "utility", "cms"],
+    "authors": [
+        {
+            "name": "XOOPS Development Team",
+            "homepage": "https://xoops.org"
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "ext-mbstring": "*"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^1.0",
+        "phpunit/phpunit": "^11.0"
+    },
+    "suggest": {
+        "ext-intl": "Required for locale-aware number/date formatting",
+        "ext-apcu": "Enables APCu caching backend",
+        "ext-zip": "Required for zip/unzip filesystem operations"
+    },
+    "autoload": {
+        "psr-4": {
+            "Xoops\\Helpers\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Xoops\\Helpers\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "xoops-helpers": {
+            "global-functions": false
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "analyse": "phpstan analyse",
+        "check:composer": "composer validate --strict",
+        "test": "phpunit",
+        "check": [
+            "@check:composer",
+            "@test",
+            "@analyse"
+        ]
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

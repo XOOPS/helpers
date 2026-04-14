@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+tone_instructions: >-
+  Expert PHP code reviewer. Focus on type safety, PSR-12 compliance,
+  PHP 8.2 compatibility, and security. This is a utility library
+  supporting PHP 8.2 through 8.5.
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "src/**/*.php"
+      instructions: >-
+          Review for PHP 8.2-8.5 compatibility. PHP 8.0 features (union types,
+          named arguments, match expressions, constructor promotion, nullsafe
+          operator) are allowed. PHP 8.1 features (enums, readonly properties,
+          intersection types, fibers, first-class callable syntax) are allowed.
+          PHP 8.2 features (readonly classes, DNF types, standalone true/false/null
+          types, constants in traits) are allowed. Avoid PHP 8.3+ features.
+          Check for proper PSR-12 code style.
+          Check for SQL injection risks — all queries must use parameterized
+          statements via XOOPS database handlers.
+    - path: "tests/**/*.php"
+      instructions: >-
+        Review test code for proper assertions, test isolation, and edge
+        case coverage. Tests must work across PHPUnit 9.6, 10, and 11.
+
+chat:
+  auto_reply: true
+
+tools:
+  phpcs:
+    enabled: true
+  phpstan:
+    enabled: true
+  gitleaks:
+    enabled: true
+  markdownlint:
+    enabled: true
+  yamllint:
+    enabled: true
+  github-checks:
+    enabled: true
+    timeout_ms: 90000

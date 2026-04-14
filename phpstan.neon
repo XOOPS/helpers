@@ -1,0 +1,9 @@
+parameters:
+    level: 6
+    paths:
+        - src
+    tmpDir: .phpstan-result-cache
+    bootstrapFiles:
+        - tests/bootstrap.php
+    scanFiles:
+        - stubs/xoops-stubs.php

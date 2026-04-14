@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a defect or regression in XOOPS Helpers.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the bug and the expected behavior.
+    validations:
+      required: true
+  - type: input
+    id: php_version
+    attributes:
+      label: PHP version
+      placeholder: "8.2.30"
+    validations:
+      required: true
+  - type: input
+    id: xoops_version
+    attributes:
+      label: XOOPS version
+      placeholder: "2.5.x / 2.6.x / custom"
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include a minimal code sample or exact steps.
+      render: php
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Errors or logs
+      description: Paste stack traces, warnings, or screenshots if available.
