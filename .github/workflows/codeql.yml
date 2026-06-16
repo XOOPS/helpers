@@ -1,5 +1,11 @@
 name: CodeQL
 
+# NOTE: CodeQL has no PHP analyzer, so it cannot scan this library's source.
+# It DOES support the "actions" language (security analysis of the workflow
+# files themselves), which is what this job runs. The previous "languages: php"
+# configuration failed every run with "Did not recognize the following
+# languages: php".
+
 on:
   push:
     branches: [main, master]
@@ -26,16 +32,7 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: php
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          coverage: none
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+          languages: actions
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
