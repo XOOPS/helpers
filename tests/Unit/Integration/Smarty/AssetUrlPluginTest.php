@@ -89,9 +89,11 @@ final class AssetUrlPluginTest extends TestCase
 
     public function testRenderWithUnrecognisedSecureValueDefaultsToFalse(): void
     {
-        // filter_var('yes', FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === null
-        // The null coalescing fallback (?? false) should suppress it silently → HTTP
-        $result = AssetUrlPlugin::render(['path' => 'img/logo.png', 'secure' => 'yes'], $this->smarty);
+        // 'maybe' is not a recognised boolean string, so
+        // filter_var('maybe', FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === null
+        // and the null-coalescing fallback (?? false) makes it HTTP.
+        // (NB: 'yes'/'no'/'on'/'off' ARE recognised by FILTER_VALIDATE_BOOLEAN.)
+        $result = AssetUrlPlugin::render(['path' => 'img/logo.png', 'secure' => 'maybe'], $this->smarty);
         self::assertStringNotContainsString('https://', $result);
     }
 

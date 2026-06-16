@@ -108,17 +108,9 @@ class DefaultUrlGenerator implements UrlGeneratorInterface
 
     private function forceHttpsScheme(string $url): string
     {
-        /** @var array<string, string|int>|false $parts */
-        $parts = parse_url($url);
-
-        if (is_array($parts) && isset($parts['host']) && is_string($parts['host'])) {
-            $port = isset($parts['port']) ? ':' . (int) $parts['port'] : '';
-            $path = isset($parts['path']) && is_string($parts['path']) ? $parts['path'] : '';
-
-            return 'https://' . $parts['host'] . $port . $path;
-        }
-
-        return $url;
+        // Swap only the scheme so the host, port, path, query and fragment are
+        // all preserved. (Reconstructing from parse_url() dropped query/fragment.)
+        return preg_replace('#^http://#i', 'https://', $url) ?? $url;
     }
 
     private function getBaseUrl(bool $secure): string

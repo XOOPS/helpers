@@ -64,6 +64,16 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   producing backslashes on Windows that could not be compared against XOOPS's forward-slash path constants;
   paths are now normalized to `/` (which PHP accepts on every platform), so the `Path::*` helpers are safe for
   building path *string* values, not only for file I/O.
+- `Filesystem::secureDir()` now returns `false` when the `index.html` guard cannot be written, instead of
+  silently reporting success.
+- `DefaultUrlGenerator` HTTPS forcing now preserves the query string and fragment (it previously rebuilt the
+  URL from host/port/path only, discarding `?…`/`#…`).
+- `Stringable::when()` now applies its callback on a *truthy* condition (matching its docblock). It previously
+  used `Value::filled()`, which treats boolean `false` as "filled" and wrongly ran the callback for
+  `when(false, …)`.
+- `Filesystem::readChunked()` no longer emits a trailing empty chunk to the callback at end-of-file.
+- `Filesystem::readJson()` returns `null` for a bare JSON list (e.g. `[1,2,3]`), honoring its
+  `array<string, mixed>` object contract.
 - Resolved a fatal inheritance conflict in `XoopsCollection`.
 - Hardened `Optional` so non-object method calls return `null` instead of throwing.
 - Corrected `Arr::isAssoc([])` to return `false`.

@@ -65,6 +65,12 @@ final class Filesystem
                     break;
                 }
 
+                // fread() can return '' at EOF before feof() flips — don't emit
+                // a trailing empty chunk to the callback.
+                if ($chunk === '') {
+                    break;
+                }
+
                 if ($callback($chunk) === false) {
                     break;
                 }
@@ -91,7 +97,9 @@ final class Filesystem
 
         $data = json_decode($json, true);
 
-        return is_array($data) ? $data : null;
+        // Contract is an object (associative array), per the @return type — a
+        // bare JSON list (e.g. "[1,2,3]") is not a valid config object.
+        return is_array($data) && !array_is_list($data) ? $data : null;
     }
 
     /**
@@ -283,8 +291,8 @@ final class Filesystem
 
         $guard = rtrim(str_replace('\\', '/', $directory), '/') . '/index.html';
 
-        if (!is_file($guard)) {
-            @file_put_contents($guard, '<script>history.go(-1);</script>');
+        if (!is_file($guard) && @file_put_contents($guard, '<script>history.go(-1);</script>') === false) {
+            return false;
         }
 
         return true;

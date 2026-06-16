@@ -222,7 +222,10 @@ final class Stringable implements NativeStringable
      */
     public function when(mixed $condition, callable $callback, ?callable $default = null): self
     {
-        if (Value::filled($condition)) {
+        // Conditionable semantics: apply the callback when the condition is
+        // truthy. (Value::filled() treats boolean false as "filled", which
+        // wrongly ran the callback for when(false, ...).)
+        if ($condition) {
             return $callback($this);
         }
 
