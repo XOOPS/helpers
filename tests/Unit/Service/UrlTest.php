@@ -59,4 +59,29 @@ final class UrlTest extends TestCase
         $result = Url::theme('starter', 'css/style.css');
         self::assertSame('http://localhost/themes/starter/css/style.css', $result);
     }
+
+    // ── H3: upload URLs (XOOPS_UPLOAD_URL undefined → site-rooted fallback) ──
+    // The test bootstrap deliberately does NOT define XOOPS_UPLOAD_URL, so these
+    // exercise the fallback branch. The honored-constant branch is covered in a
+    // separate, process-isolated test (see DefaultUrlGeneratorTest).
+
+    public function testUploadFallsBackToSiteRootedUploadsUrl(): void
+    {
+        $result = Url::upload('quotes/author/p.png');
+        self::assertSame('http://localhost/uploads/quotes/author/p.png', $result);
+    }
+
+    public function testModuleUploadEqualsUploadOfCombinedPath(): void
+    {
+        self::assertSame(
+            Url::upload('quotes/author/p.png'),
+            Url::moduleUpload('quotes', 'author/p.png'),
+        );
+    }
+
+    public function testModuleUploadFallbackValue(): void
+    {
+        $result = Url::moduleUpload('quotes', 'author/p.png');
+        self::assertSame('http://localhost/uploads/quotes/author/p.png', $result);
+    }
 }

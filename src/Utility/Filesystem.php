@@ -65,6 +65,12 @@ final class Filesystem
                     break;
                 }
 
+                // fread() can return '' at EOF before feof() flips — don't emit
+                // a trailing empty chunk to the callback.
+                if ($chunk === '') {
+                    break;
+                }
+
                 if ($callback($chunk) === false) {
                     break;
                 }
@@ -91,7 +97,9 @@ final class Filesystem
 
         $data = json_decode($json, true);
 
-        return is_array($data) ? $data : null;
+        // Contract is an object (associative array), per the @return type — a
+        // bare JSON list (e.g. "[1,2,3]") is not a valid config object.
+        return is_array($data) && !array_is_list($data) ? $data : null;
     }
 
     /**
@@ -201,6 +209,104 @@ final class Filesystem
         }
 
         return @mkdir($directory, $mode, $recursive);
+    }
+
+    /**
+     * Copy a single file, creating the destination directory if needed (H2).
+     *
+     * For directories use copyDirectory().
+     */
+    public static function copy(string $source, string $destination): bool
+    {
+        if (!is_file($source)) {
+            return false;
+        }
+
+        $dir = \dirname($destination);
+
+        if (!is_dir($dir) && !self::mkdir($dir)) {
+            return false;
+        }
+
+        return @copy($source, $destination);
+    }
+
+    /**
+     * Delete a single file or symlink (H2). Returns true if already absent.
+     *
+     * Refuses real directories — use deleteDirectory() for those.
+     */
+    public static function delete(string $path): bool
+    {
+        if (!file_exists($path) && !is_link($path)) {
+            return true;
+        }
+
+        if (is_dir($path) && !is_link($path)) {
+            return false;
+        }
+
+        return @unlink($path);
+    }
+
+    /**
+     * Move/rename a single file, creating the destination directory if needed (H2).
+     *
+     * Falls back to copy-then-delete when rename() cannot cross filesystems
+     * (e.g. moving between devices/mount points), mirroring moveDirectory().
+     * For directories use moveDirectory().
+     */
+    public static function move(string $source, string $destination): bool
+    {
+        if (!is_file($source)) {
+            return false;
+        }
+
+        $dir = \dirname($destination);
+
+        if (!is_dir($dir) && !self::mkdir($dir)) {
+            return false;
+        }
+
+        if (@rename($source, $destination)) {
+            return true;
+        }
+
+        // Cross-filesystem fallback: copy then remove the source.
+        if (@copy($source, $destination)) {
+            return @unlink($source);
+        }
+
+        return false;
+    }
+
+    /**
+     * Alias of move() for call sites that read more naturally as a rename (H2).
+     */
+    public static function rename(string $source, string $destination): bool
+    {
+        return self::move($source, $destination);
+    }
+
+    /**
+     * Create a directory and drop an anti-listing index.html guard (H7).
+     *
+     * Matches the XOOPS convention: the guard contains the JS history-back
+     * redirect that modules currently write by hand after each mkdir.
+     */
+    public static function secureDir(string $directory, int $mode = 0775): bool
+    {
+        if (!self::mkdir($directory, $mode)) {
+            return false;
+        }
+
+        $guard = rtrim($directory, '/\\') . DIRECTORY_SEPARATOR . 'index.html';
+
+        if (!is_file($guard) && @file_put_contents($guard, '<script>history.go(-1);</script>') === false) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

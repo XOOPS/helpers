@@ -95,6 +95,30 @@ final class Url
         return self::generator()->theme($name, $path);
     }
 
+    /**
+     * Generate a URL under the uploads root (honors XOOPS_UPLOAD_URL).
+     *
+     * @param string              $path   Relative path within the uploads root
+     * @param array<string,mixed> $query  Query parameters
+     * @param bool                $secure Force HTTPS
+     */
+    public static function upload(string $path = '', array $query = [], bool $secure = false): string
+    {
+        return self::generator()->upload($path, $query, $secure);
+    }
+
+    /**
+     * Generate an uploads URL for a module's subfolder.
+     *
+     * @param string              $dirname Module directory name
+     * @param string              $path    Relative path within the module's uploads subfolder
+     * @param array<string,mixed> $query   Query parameters
+     */
+    public static function moduleUpload(string $dirname, string $path = '', array $query = []): string
+    {
+        return self::generator()->moduleUpload($dirname, $path, $query);
+    }
+
     private static function generator(): UrlGeneratorInterface
     {
         return self::$generator ??= new DefaultUrlGenerator();

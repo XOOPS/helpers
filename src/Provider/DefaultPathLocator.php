@@ -49,7 +49,7 @@ class DefaultPathLocator implements PathLocatorInterface
     {
         $base = defined('XOOPS_VAR_PATH')
             ? XOOPS_VAR_PATH
-            : self::rootPath() . DIRECTORY_SEPARATOR . 'xoops_data';
+            : self::rootPath() . '/xoops_data';
 
         return self::join($base, $path);
     }
@@ -58,19 +58,19 @@ class DefaultPathLocator implements PathLocatorInterface
     {
         $base = defined('XOOPS_UPLOAD_PATH')
             ? XOOPS_UPLOAD_PATH
-            : self::rootPath() . DIRECTORY_SEPARATOR . 'uploads';
+            : self::rootPath() . '/uploads';
 
         return self::join($base, $path);
     }
 
     public function modulesPath(string $path = ''): string
     {
-        return self::join(self::rootPath() . DIRECTORY_SEPARATOR . 'modules', $path);
+        return self::join(self::rootPath() . '/modules', $path);
     }
 
     public function themesPath(string $path = ''): string
     {
-        return self::join(self::rootPath() . DIRECTORY_SEPARATOR . 'themes', $path);
+        return self::join(self::rootPath() . '/themes', $path);
     }
 
     public function modulePath(string $dirname, string $path = ''): string
@@ -89,14 +89,22 @@ class DefaultPathLocator implements PathLocatorInterface
     }
 
     /**
-     * Join a base path with a relative path, handling separators.
+     * Join a base path with a relative path.
+     *
+     * Always emits forward slashes (H1): XOOPS stores/compares/echoes paths as
+     * forward-slash strings and PHP accepts '/' on every platform, so building
+     * paths with DIRECTORY_SEPARATOR (backslash on Windows) produced values that
+     * could not be compared against legacy constants. Normalising to '/' makes
+     * these helpers safe to use for path *string* values, not just file I/O.
      */
     private static function join(string $base, string $path): string
     {
+        $base = str_replace('\\', '/', $base);
+
         if ($path === '') {
             return $base;
         }
 
-        return rtrim($base, '/\\') . DIRECTORY_SEPARATOR . ltrim($path, '/\\');
+        return rtrim($base, '/') . '/' . ltrim(str_replace('\\', '/', $path), '/');
     }
 }

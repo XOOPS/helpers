@@ -50,8 +50,9 @@ final class FormatNumberPluginTest extends TestCase
             $this->smarty,
         );
 
-        self::assertStringContainsString('1234', $result);
-        self::assertStringContainsString('5', $result);
+        // Locale-aware formatting groups thousands (e.g. "1,234.50"), so assert on
+        // the digit content rather than an ungrouped "1234" substring.
+        self::assertSame('123450', preg_replace('/\D/', '', $result));
     }
 
     public function testRenderDecimalTypeWithZeroDecimals(): void

@@ -73,6 +73,46 @@ class DefaultUrlGenerator implements UrlGeneratorInterface
         return $this->generate($themePath);
     }
 
+    public function upload(string $path = '', array $query = [], bool $secure = false): string
+    {
+        if (defined('XOOPS_UPLOAD_URL')) {
+            $url = rtrim((string) XOOPS_UPLOAD_URL, '/');
+
+            if ($path !== '') {
+                $url .= '/' . ltrim($path, '/');
+            }
+
+            if ($secure) {
+                $url = $this->forceHttpsScheme($url);
+            }
+
+            if ($query !== []) {
+                $url .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+            }
+
+            return $url;
+        }
+
+        // Fallback only when XOOPS_UPLOAD_URL is undefined.
+        $relative = 'uploads' . ($path !== '' ? '/' . ltrim($path, '/') : '');
+
+        return $this->generate($relative, $query, $secure);
+    }
+
+    public function moduleUpload(string $dirname, string $path = '', array $query = []): string
+    {
+        $subPath = $dirname . ($path !== '' ? '/' . ltrim($path, '/') : '');
+
+        return $this->upload($subPath, $query);
+    }
+
+    private function forceHttpsScheme(string $url): string
+    {
+        // Swap only the scheme so the host, port, path, query and fragment are
+        // all preserved. (Reconstructing from parse_url() dropped query/fragment.)
+        return preg_replace('#^http://#i', 'https://', $url) ?? $url;
+    }
+
     private function getBaseUrl(bool $secure): string
     {
         if (defined('XOOPS_URL')) {

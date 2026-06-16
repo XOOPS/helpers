@@ -40,8 +40,8 @@ final class XoopsCollection extends Collection
     /**
      * Create a collection from a XOOPS object handler.
      *
-     * @param \XoopsObjectHandler       $handler  The object handler
-     * @param \CriteriaElement|null     $criteria Optional filter criteria
+     * @param object                $handler  The object handler (duck-typed: any object exposing getObjects())
+     * @param \CriteriaElement|null  $criteria Optional filter criteria
      * @return self
      */
     public static function fromHandler(object $handler, ?object $criteria = null): self

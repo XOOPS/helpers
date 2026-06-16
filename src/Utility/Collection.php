@@ -26,6 +26,7 @@ use Countable;
 use IteratorAggregate;
 use JsonSerializable;
 use Traversable;
+use Xoops\Helpers\Traits\Tappable;
 
 /**
  * Fluent collection wrapper for array data.
@@ -42,6 +43,9 @@ use Traversable;
  */
 class Collection implements IteratorAggregate, Countable, ArrayAccess, JsonSerializable
 {
+    /** tap() — call a callback for side effects, then return $this. */
+    use Tappable;
+
     /**
      * @param array<TKey, TValue> $items
      */
@@ -367,18 +371,6 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess, JsonSeria
         if ($default !== null) {
             return $default($this, $value);
         }
-
-        return $this;
-    }
-
-    /**
-     * Apply a callback for side effects, return self.
-     *
-     * @return self<TKey, TValue>
-     */
-    public function tap(callable $callback): self
-    {
-        $callback($this);
 
         return $this;
     }

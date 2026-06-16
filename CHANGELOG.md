@@ -6,8 +6,23 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.0.0 Beta2] — 2026-06-16
+
 ### Added
 
+- `Filesystem::copy()`, `Filesystem::delete()`, `Filesystem::move()`, `Filesystem::rename()` — single-file
+  operations complementing the existing directory-level `copyDirectory()`/`deleteDirectory()`/`moveDirectory()`.
+  `copy()`/`move()` create the destination directory when missing; `move()` falls back to copy-then-delete when
+  `rename()` cannot cross filesystems; `delete()` treats an absent path as success and refuses real directories.
+- `Filesystem::secureDir()` — creates a directory and writes an anti-listing `index.html` guard (the
+  `history.go(-1)` redirect XOOPS modules otherwise write by hand after each `mkdir`).
+- `Url::upload()` and `Url::moduleUpload()` — generate URLs under the uploads root, honoring the
+  independently-configurable `XOOPS_UPLOAD_URL` (falling back to a site-rooted `uploads/` path only when it is
+  undefined). `UrlGeneratorInterface` gains the matching `upload()` / `moduleUpload()` contract methods.
+- `Path::moduleUpload()` — filesystem-path counterpart resolving a module's uploads subfolder under
+  `XOOPS_UPLOAD_PATH`.
+- Tests: `DefaultPathLocatorTest`, `DefaultUrlGeneratorTest`, and new cases in `FilesystemTest`, `UrlTest`,
+  and `PathTest` covering the above.
 - `HtmlBuilder::text(string $value): string` — semantic wrapper over `escape()` for inserting
   user-supplied plain text into tag bodies. Makes content escaping visible at the call site and
   distinguishes it from trusted HTML blocks passed directly to `tag()`.
@@ -45,6 +60,26 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Fixed
 
+- `DefaultPathLocator` now always emits forward slashes. It previously joined with `DIRECTORY_SEPARATOR`,
+  producing backslashes on Windows that could not be compared against XOOPS's forward-slash path constants;
+  paths are now normalized to `/` (which PHP accepts on every platform), so the `Path::*` helpers are safe for
+  building path *string* values, not only for file I/O.
+- `Filesystem::secureDir()` now returns `false` when the `index.html` guard cannot be written, instead of
+  silently reporting success.
+- `DefaultUrlGenerator` HTTPS forcing now preserves the query string and fragment (it previously rebuilt the
+  URL from host/port/path only, discarding `?…`/`#…`).
+- `Stringable::when()` now applies its callback on a *truthy* condition (matching its docblock). It previously
+  used `Value::filled()`, which treats boolean `false` as "filled" and wrongly ran the callback for
+  `when(false, …)`.
+- `Filesystem::readChunked()` no longer emits a trailing empty chunk to the callback at end-of-file.
+- `Filesystem::readJson()` returns `null` for a bare JSON list (e.g. `[1,2,3]`), honoring its
+  `array<string, mixed>` object contract.
+- Resolved 5 PHPStan 2.x findings surfaced once the analyser resolved to 2.x in CI: corrected
+  `XoopsCollection::fromHandler()`'s `@param` to `object` (it duck-types via `method_exists`), relaxed the
+  by-reference `array` phpdoc on `Arr::set()`/`Arr::forget()` (and the `arr_set()` wrapper), dropped a
+  redundant `is_array()` in `Arr::collapse()`, and made `Collection` consume the `Tappable` trait (removing a
+  duplicated `tap()` and the "trait used zero times" report). Pinned `phpstan/phpstan` to `^2.0` so local and
+  CI analyse with the same major (the prior `^1.0 || ^2.0` + uncommitted lock let them drift).
 - Resolved a fatal inheritance conflict in `XoopsCollection`.
 - Hardened `Optional` so non-object method calls return `null` instead of throwing.
 - Corrected `Arr::isAssoc([])` to return `false`.
