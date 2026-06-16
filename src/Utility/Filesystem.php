@@ -204,6 +204,93 @@ final class Filesystem
     }
 
     /**
+     * Copy a single file, creating the destination directory if needed (H2).
+     *
+     * For directories use copyDirectory().
+     */
+    public static function copy(string $source, string $destination): bool
+    {
+        if (!is_file($source)) {
+            return false;
+        }
+
+        $dir = \dirname($destination);
+
+        if (!is_dir($dir) && !self::mkdir($dir)) {
+            return false;
+        }
+
+        return @copy($source, $destination);
+    }
+
+    /**
+     * Delete a single file or symlink (H2). Returns true if already absent.
+     *
+     * Refuses real directories — use deleteDirectory() for those.
+     */
+    public static function delete(string $path): bool
+    {
+        if (!file_exists($path) && !is_link($path)) {
+            return true;
+        }
+
+        if (is_dir($path) && !is_link($path)) {
+            return false;
+        }
+
+        return @unlink($path);
+    }
+
+    /**
+     * Move/rename a single file, creating the destination directory if needed (H2).
+     *
+     * For directories use moveDirectory().
+     */
+    public static function move(string $source, string $destination): bool
+    {
+        if (!is_file($source)) {
+            return false;
+        }
+
+        $dir = \dirname($destination);
+
+        if (!is_dir($dir) && !self::mkdir($dir)) {
+            return false;
+        }
+
+        return @rename($source, $destination);
+    }
+
+    /**
+     * Alias of move() for call sites that read more naturally as a rename (H2).
+     */
+    public static function rename(string $source, string $destination): bool
+    {
+        return self::move($source, $destination);
+    }
+
+    /**
+     * Create a directory and drop an anti-listing index.html guard (H7).
+     *
+     * Matches the XOOPS convention: the guard contains the JS history-back
+     * redirect that modules currently write by hand after each mkdir.
+     */
+    public static function secureDir(string $directory, int $mode = 0775): bool
+    {
+        if (!self::mkdir($directory, $mode)) {
+            return false;
+        }
+
+        $guard = rtrim(str_replace('\\', '/', $directory), '/') . '/index.html';
+
+        if (!is_file($guard)) {
+            @file_put_contents($guard, '<script>history.go(-1);</script>');
+        }
+
+        return true;
+    }
+
+    /**
      * Recursively delete a directory and all its contents.
      */
     public static function deleteDirectory(string $directory): bool

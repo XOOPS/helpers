@@ -6,8 +6,23 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.0.0 Beta2] — 2026-06-16
+
 ### Added
 
+- `Filesystem::copy()`, `Filesystem::delete()`, `Filesystem::move()`, `Filesystem::rename()` — single-file
+  operations complementing the existing directory-level `copyDirectory()`/`deleteDirectory()`/`moveDirectory()`.
+  `copy()`/`move()` create the destination directory when missing; `delete()` treats an absent path as success
+  and refuses real directories.
+- `Filesystem::secureDir()` — creates a directory and writes an anti-listing `index.html` guard (the
+  `history.go(-1)` redirect XOOPS modules otherwise write by hand after each `mkdir`).
+- `Url::upload()` and `Url::moduleUpload()` — generate URLs under the uploads root, honoring the
+  independently-configurable `XOOPS_UPLOAD_URL` (falling back to a site-rooted `uploads/` path only when it is
+  undefined). `UrlGeneratorInterface` gains the matching `upload()` / `moduleUpload()` contract methods.
+- `Path::moduleUpload()` — filesystem-path counterpart resolving a module's uploads subfolder under
+  `XOOPS_UPLOAD_PATH`.
+- Tests: `DefaultPathLocatorTest`, `DefaultUrlGeneratorTest`, and new cases in `FilesystemTest`, `UrlTest`,
+  and `PathTest` covering the above.
 - `HtmlBuilder::text(string $value): string` — semantic wrapper over `escape()` for inserting
   user-supplied plain text into tag bodies. Makes content escaping visible at the call site and
   distinguishes it from trusted HTML blocks passed directly to `tag()`.
@@ -45,6 +60,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Fixed
 
+- `DefaultPathLocator` now always emits forward slashes. It previously joined with `DIRECTORY_SEPARATOR`,
+  producing backslashes on Windows that could not be compared against XOOPS's forward-slash path constants;
+  paths are now normalized to `/` (which PHP accepts on every platform), so the `Path::*` helpers are safe for
+  building path *string* values, not only for file I/O.
 - Resolved a fatal inheritance conflict in `XoopsCollection`.
 - Hardened `Optional` so non-object method calls return `null` instead of throwing.
 - Corrected `Arr::isAssoc([])` to return `false`.

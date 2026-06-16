@@ -307,4 +307,130 @@ final class FilesystemTest extends TestCase
 
         self::assertFalse(Filesystem::zip($this->tmp . '/nosuchdir', $this->tmp . '/out.zip'));
     }
+
+    // ── H2: single-file copy ────────────────────────────────
+
+    public function testCopyCreatesMissingDestDirAndCopiesContents(): void
+    {
+        $src = $this->tmp . '/src.txt';
+        $dst = $this->tmp . '/new/dir/dst.txt';
+        file_put_contents($src, 'PAYLOAD');
+
+        $result = Filesystem::copy($src, $dst);
+
+        self::assertTrue($result);
+        self::assertFileExists($dst);
+        self::assertSame('PAYLOAD', file_get_contents($dst));
+        // Source is left intact by a copy
+        self::assertFileExists($src);
+    }
+
+    public function testCopyReturnsFalseWhenSourceIsNotAFile(): void
+    {
+        self::assertFalse(Filesystem::copy($this->tmp . '/missing.txt', $this->tmp . '/out.txt'));
+    }
+
+    public function testCopyReturnsFalseWhenSourceIsADirectory(): void
+    {
+        $dir = $this->tmp . '/adir';
+        mkdir($dir);
+
+        self::assertFalse(Filesystem::copy($dir, $this->tmp . '/out.txt'));
+    }
+
+    // ── H2: single-file delete ──────────────────────────────
+
+    public function testDeleteRemovesFile(): void
+    {
+        $path = $this->tmp . '/gone.txt';
+        file_put_contents($path, 'x');
+
+        $result = Filesystem::delete($path);
+
+        self::assertTrue($result);
+        self::assertFileDoesNotExist($path);
+    }
+
+    public function testDeleteReturnsTrueWhenAlreadyAbsent(): void
+    {
+        self::assertTrue(Filesystem::delete($this->tmp . '/never_existed.txt'));
+    }
+
+    public function testDeleteReturnsFalseForRealDirectory(): void
+    {
+        $dir = $this->tmp . '/realdir';
+        mkdir($dir);
+
+        self::assertFalse(Filesystem::delete($dir));
+        self::assertDirectoryExists($dir);
+    }
+
+    // ── H2: single-file move ────────────────────────────────
+
+    public function testMoveRelocatesFileAndCreatesDestDir(): void
+    {
+        $src = $this->tmp . '/from.txt';
+        $dst = $this->tmp . '/moved/to.txt';
+        file_put_contents($src, 'DATA');
+
+        $result = Filesystem::move($src, $dst);
+
+        self::assertTrue($result);
+        self::assertFileExists($dst);
+        self::assertSame('DATA', file_get_contents($dst));
+        self::assertFileDoesNotExist($src);
+    }
+
+    public function testMoveReturnsFalseWhenSourceIsNotAFile(): void
+    {
+        self::assertFalse(Filesystem::move($this->tmp . '/missing.txt', $this->tmp . '/out.txt'));
+    }
+
+    // ── H2: rename is an alias of move ──────────────────────
+
+    public function testRenameBehavesAsMove(): void
+    {
+        $src = $this->tmp . '/orig.txt';
+        $dst = $this->tmp . '/renamed/new.txt';
+        file_put_contents($src, 'CONTENT');
+
+        $result = Filesystem::rename($src, $dst);
+
+        self::assertTrue($result);
+        self::assertFileExists($dst);
+        self::assertSame('CONTENT', file_get_contents($dst));
+        self::assertFileDoesNotExist($src);
+    }
+
+    public function testRenameReturnsFalseWhenSourceMissing(): void
+    {
+        self::assertFalse(Filesystem::rename($this->tmp . '/nope.txt', $this->tmp . '/out.txt'));
+    }
+
+    // ── H7: secureDir ───────────────────────────────────────
+
+    public function testSecureDirCreatesDirectoryAndIndexGuard(): void
+    {
+        $dir = $this->tmp . '/secured/nested';
+
+        $result = Filesystem::secureDir($dir);
+
+        self::assertTrue($result);
+        self::assertDirectoryExists($dir);
+
+        $guard = $dir . '/index.html';
+        self::assertFileExists($guard);
+        self::assertStringContainsString('history.go(-1)', file_get_contents($guard));
+    }
+
+    public function testSecureDirReturnsTrueWhenDirectoryAlreadyExists(): void
+    {
+        $dir = $this->tmp . '/already';
+        mkdir($dir);
+
+        $result = Filesystem::secureDir($dir);
+
+        self::assertTrue($result);
+        self::assertFileExists($dir . '/index.html');
+    }
 }

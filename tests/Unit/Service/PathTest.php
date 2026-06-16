@@ -33,23 +33,23 @@ final class PathTest extends TestCase
 
     public function testBaseReturnsRootPath(): void
     {
-        self::assertSame(XOOPS_ROOT_PATH, Path::base());
+        self::assertSame(str_replace('\\', '/', XOOPS_ROOT_PATH), Path::base());
     }
 
     public function testBaseWithRelativePath(): void
     {
-        $expected = XOOPS_ROOT_PATH . DIRECTORY_SEPARATOR . 'includes';
+        $expected = str_replace('\\', '/', XOOPS_ROOT_PATH) . '/includes';
         self::assertSame($expected, Path::base('includes'));
     }
 
     public function testStorageReturnsVarPath(): void
     {
-        self::assertSame(XOOPS_VAR_PATH, Path::storage());
+        self::assertSame(str_replace('\\', '/', XOOPS_VAR_PATH), Path::storage());
     }
 
     public function testUploadsReturnsUploadPath(): void
     {
-        self::assertSame(XOOPS_UPLOAD_PATH, Path::uploads());
+        self::assertSame(str_replace('\\', '/', XOOPS_UPLOAD_PATH), Path::uploads());
     }
 
     public function testModulePath(): void
@@ -65,6 +65,31 @@ final class PathTest extends TestCase
         $result = Path::theme('starter', 'css/style.css');
         self::assertStringContainsString('themes', $result);
         self::assertStringContainsString('starter', $result);
+    }
+
+    // ── H3: moduleUpload() filesystem path ──────────────────
+
+    public function testModuleUploadEqualsUploadsPathOfCombinedPath(): void
+    {
+        self::assertSame(
+            Path::uploads('quotes/author'),
+            Path::moduleUpload('quotes', 'author'),
+        );
+    }
+
+    public function testModuleUploadResolvesUnderUploadRoot(): void
+    {
+        $expected = str_replace('\\', '/', XOOPS_UPLOAD_PATH) . '/quotes/author';
+
+        self::assertSame($expected, str_replace('\\', '/', Path::moduleUpload('quotes', 'author')));
+    }
+
+    public function testModuleUploadWithoutSubPath(): void
+    {
+        self::assertSame(
+            Path::uploads('quotes'),
+            Path::moduleUpload('quotes'),
+        );
     }
 
     // ── languageFile() ──────────────────────────────────────

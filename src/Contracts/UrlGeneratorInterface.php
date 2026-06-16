@@ -62,4 +62,28 @@ interface UrlGeneratorInterface
      * @param string $path Relative path within the theme
      */
     public function theme(string $name, string $path = ''): string;
+
+    /**
+     * Generate a URL under the uploads root (H3).
+     *
+     * Honors XOOPS_UPLOAD_URL, which is independently configurable and is NOT
+     * guaranteed to equal XOOPS_URL . '/uploads'. Falls back to a site-rooted
+     * 'uploads' path only when the constant is undefined.
+     *
+     * @param string              $path   Relative path within the uploads root
+     * @param array<string,mixed> $query  Query parameters
+     * @param bool                $secure Force HTTPS
+     */
+    public function upload(string $path = '', array $query = [], bool $secure = false): string;
+
+    /**
+     * Generate an uploads URL for a module's subfolder (H3).
+     *
+     * e.g. moduleUpload('quotes', 'author/pic.png') -> XOOPS_UPLOAD_URL/quotes/author/pic.png
+     *
+     * @param string              $dirname Module directory name
+     * @param string              $path    Relative path within the module's uploads subfolder
+     * @param array<string,mixed> $query   Query parameters
+     */
+    public function moduleUpload(string $dirname, string $path = '', array $query = []): string;
 }

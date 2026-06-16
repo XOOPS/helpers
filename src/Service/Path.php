@@ -75,6 +75,18 @@ final class Path
         return self::locator()->uploadsPath($path);
     }
 
+    /**
+     * Filesystem path under a module's uploads subfolder (H3 symmetry with Url::moduleUpload).
+     *
+     * e.g. moduleUpload('quotes', 'author') -> XOOPS_UPLOAD_PATH/quotes/author
+     */
+    public static function moduleUpload(string $dirname, string $path = ''): string
+    {
+        $sub = $dirname . ($path !== '' ? '/' . ltrim($path, '/') : '');
+
+        return self::locator()->uploadsPath($sub);
+    }
+
     public static function modules(string $path = ''): string
     {
         return self::locator()->modulesPath($path);
