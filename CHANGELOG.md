@@ -12,8 +12,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 - `Filesystem::copy()`, `Filesystem::delete()`, `Filesystem::move()`, `Filesystem::rename()` — single-file
   operations complementing the existing directory-level `copyDirectory()`/`deleteDirectory()`/`moveDirectory()`.
-  `copy()`/`move()` create the destination directory when missing; `delete()` treats an absent path as success
-  and refuses real directories.
+  `copy()`/`move()` create the destination directory when missing; `move()` falls back to copy-then-delete when
+  `rename()` cannot cross filesystems; `delete()` treats an absent path as success and refuses real directories.
 - `Filesystem::secureDir()` — creates a directory and writes an anti-listing `index.html` guard (the
   `history.go(-1)` redirect XOOPS modules otherwise write by hand after each `mkdir`).
 - `Url::upload()` and `Url::moduleUpload()` — generate URLs under the uploads root, honoring the

@@ -433,4 +433,17 @@ final class FilesystemTest extends TestCase
         self::assertTrue($result);
         self::assertFileExists($dir . '/index.html');
     }
+
+    public function testSecureDirPreservesExistingGuardFile(): void
+    {
+        $dir = $this->tmp . '/guarded';
+        mkdir($dir);
+        $guard = $dir . '/index.html';
+        file_put_contents($guard, 'custom guard');
+
+        $result = Filesystem::secureDir($dir);
+
+        self::assertTrue($result);
+        self::assertSame('custom guard', file_get_contents($guard));
+    }
 }

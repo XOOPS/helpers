@@ -252,6 +252,8 @@ final class Filesystem
     /**
      * Move/rename a single file, creating the destination directory if needed (H2).
      *
+     * Falls back to copy-then-delete when rename() cannot cross filesystems
+     * (e.g. moving between devices/mount points), mirroring moveDirectory().
      * For directories use moveDirectory().
      */
     public static function move(string $source, string $destination): bool
@@ -266,7 +268,16 @@ final class Filesystem
             return false;
         }
 
-        return @rename($source, $destination);
+        if (@rename($source, $destination)) {
+            return true;
+        }
+
+        // Cross-filesystem fallback: copy then remove the source.
+        if (@copy($source, $destination)) {
+            return @unlink($source);
+        }
+
+        return false;
     }
 
     /**
@@ -289,7 +300,7 @@ final class Filesystem
             return false;
         }
 
-        $guard = rtrim(str_replace('\\', '/', $directory), '/') . '/index.html';
+        $guard = rtrim($directory, '/\\') . DIRECTORY_SEPARATOR . 'index.html';
 
         if (!is_file($guard) && @file_put_contents($guard, '<script>history.go(-1);</script>') === false) {
             return false;
