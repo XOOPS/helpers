@@ -93,8 +93,8 @@ if (!function_exists('arr_get')) {
 
 if (!function_exists('arr_set')) {
     /**
-     * @param array<string, mixed> $array
-     * @return array<string, mixed>
+     * @param array<mixed> $array
+     * @return array<mixed>
      */
     function arr_set(array &$array, string $key, mixed $value): array
     {

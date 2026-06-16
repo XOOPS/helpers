@@ -91,10 +91,10 @@ final class Arr
     /**
      * Set a value in a nested array using dot notation.
      *
-     * @param array<string, mixed> $array Array to modify (by reference)
-     * @param string               $key   Dot-notated key path
-     * @param mixed                $value Value to set
-     * @return array<string, mixed>
+     * @param array<mixed> $array Array to modify (by reference)
+     * @param string       $key   Dot-notated key path
+     * @param mixed        $value Value to set
+     * @return array<mixed>
      */
     public static function set(array &$array, string $key, mixed $value): array
     {
@@ -125,7 +125,7 @@ final class Arr
     /**
      * Remove one or more keys from an array using dot notation.
      *
-     * @param array<string, mixed> $array Array to modify (by reference)
+     * @param array<mixed>         $array Array to modify (by reference)
      * @param string|array<string> $keys  Key(s) to remove
      */
     public static function forget(array &$array, string|array $keys): void
@@ -437,9 +437,8 @@ final class Arr
         $results = [];
 
         foreach ($array as $values) {
-            if (is_array($values)) {
-                $results = array_merge($results, $values);
-            }
+            // Each element is array<mixed> per the parameter type.
+            $results = array_merge($results, $values);
         }
 
         return $results;

@@ -74,6 +74,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - `Filesystem::readChunked()` no longer emits a trailing empty chunk to the callback at end-of-file.
 - `Filesystem::readJson()` returns `null` for a bare JSON list (e.g. `[1,2,3]`), honoring its
   `array<string, mixed>` object contract.
+- Resolved 5 PHPStan 2.x findings surfaced once the analyser resolved to 2.x in CI: corrected
+  `XoopsCollection::fromHandler()`'s `@param` to `object` (it duck-types via `method_exists`), relaxed the
+  by-reference `array` phpdoc on `Arr::set()`/`Arr::forget()` (and the `arr_set()` wrapper), dropped a
+  redundant `is_array()` in `Arr::collapse()`, and made `Collection` consume the `Tappable` trait (removing a
+  duplicated `tap()` and the "trait used zero times" report). Pinned `phpstan/phpstan` to `^2.0` so local and
+  CI analyse with the same major (the prior `^1.0 || ^2.0` + uncommitted lock let them drift).
 - Resolved a fatal inheritance conflict in `XoopsCollection`.
 - Hardened `Optional` so non-object method calls return `null` instead of throwing.
 - Corrected `Arr::isAssoc([])` to return `false`.
