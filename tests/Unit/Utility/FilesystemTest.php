@@ -272,6 +272,35 @@ final class FilesystemTest extends TestCase
         self::assertSame('Hello', file_get_contents($dst . '/hello.txt'));
     }
 
+    public function testZipSkipsSymlinkPointingOutsideBaseDirectory(): void
+    {
+        if (!class_exists('ZipArchive')) {
+            self::markTestSkipped('ext-zip not available');
+        }
+
+        $src = $this->tmp . '/to_zip';
+        mkdir($src, 0775, true);
+        file_put_contents($src . '/inside.txt', 'inside');
+
+        // A file outside the tree, reached only through a symlink placed inside it.
+        $outside = $this->tmp . '/outside.txt';
+        file_put_contents($outside, 'secret');
+        if (!@symlink($outside, $src . '/link.txt')) {
+            self::markTestSkipped('symlinks not supported in this environment');
+        }
+
+        $zipPath = $this->tmp . '/archive.zip';
+        self::assertTrue(Filesystem::zip($src, $zipPath));
+
+        $dst = $this->tmp . '/unzipped';
+        self::assertTrue(Filesystem::unzip($zipPath, $dst));
+
+        // The in-tree file is archived; the escaping symlink (and its target) are not.
+        self::assertFileExists($dst . '/inside.txt');
+        self::assertFileDoesNotExist($dst . '/link.txt');
+        self::assertFileDoesNotExist($dst . '/outside.txt');
+    }
+
     public function testUnzipReturnsFalseOnMissingZip(): void
     {
         if (!class_exists('ZipArchive')) {

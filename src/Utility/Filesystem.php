@@ -417,7 +417,10 @@ final class Filesystem
             new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
         );
 
-        $basePath = realpath($directory) ?: $directory;
+        // Strip any trailing separator so the prefix check and substr() below stay
+        // correct for a root base path too ("/" or "C:\"); otherwise the guard would
+        // build a doubled separator and skip every file, leaving an empty archive.
+        $basePath = rtrim(realpath($directory) ?: $directory, '/\\');
 
         foreach ($iterator as $file) {
             if ($file->isDir()) {
@@ -427,6 +430,16 @@ final class Filesystem
             $realPath = $file->getRealPath();
 
             if ($realPath === false) {
+                continue;
+            }
+
+            // Skip anything that resolves outside the base directory (e.g. an escaping
+            // symlink); otherwise the relative path below would be wrong/empty and could
+            // leak external content into the archive. Compare with forward-slash-normalised
+            // paths so a separator mix on Windows cannot break the check. $basePath has no
+            // trailing separator (rtrim above), so appending one yields exactly one.
+            $normalizedBase = str_replace('\\', '/', $basePath) . '/';
+            if (!str_starts_with(str_replace('\\', '/', $realPath), $normalizedBase)) {
                 continue;
             }
 
