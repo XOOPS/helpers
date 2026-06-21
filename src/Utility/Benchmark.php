@@ -81,9 +81,17 @@ final class Benchmark
      * Run a callback multiple times and return average execution time.
      *
      * @return array{avg_ms: float, min_ms: float, max_ms: float, iterations: int}
+     *
+     * @throws \InvalidArgumentException if $iterations is less than 1
      */
     public static function average(callable $callback, int $iterations = 100): array
     {
+        if ($iterations < 1) {
+            // Without at least one sample the averages below would divide by zero,
+            // and min()/max() on an empty array throw a ValueError on PHP 8.
+            throw new \InvalidArgumentException('Iterations must be at least 1.');
+        }
+
         $times = [];
 
         for ($i = 0; $i < $iterations; $i++) {

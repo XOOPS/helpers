@@ -3,9 +3,10 @@ name: Dependency Review
 # NOTE: actions/dependency-review-action requires the repository's Dependency
 # Graph to be enabled (Settings → Code security → Dependency graph). Until that
 # is on, the action fails with "Dependency review is not supported on this
-# repository". The job is marked continue-on-error so a disabled graph cannot
-# block PRs; once Dependency graph is enabled, remove continue-on-error to make
-# this a hard gate again.
+# repository". The action step is marked continue-on-error so a disabled graph
+# cannot block (or red-flag) PRs: the step may fail while the job still concludes
+# successfully. Once Dependency graph is enabled, remove continue-on-error from
+# the step to make this a hard gate again.
 
 on:
   pull_request:
@@ -17,7 +18,6 @@ permissions:
 jobs:
   dependency-review:
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - name: Checkout code
@@ -25,3 +25,4 @@ jobs:
 
       - name: Dependency review
         uses: actions/dependency-review-action@v5
+        continue-on-error: true
