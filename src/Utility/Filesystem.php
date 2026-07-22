@@ -422,6 +422,11 @@ final class Filesystem
         // build a doubled separator and skip every file, leaving an empty archive.
         $basePath = rtrim(realpath($directory) ?: $directory, '/\\');
 
+        // Forward-slash-normalised base used by the containment check below. $basePath is
+        // loop-invariant, so this is computed once rather than per directory entry. It has
+        // no trailing separator (rtrim above), so appending one yields exactly one.
+        $normalizedBase = str_replace('\\', '/', $basePath) . '/';
+
         foreach ($iterator as $file) {
             if ($file->isDir()) {
                 continue;
@@ -435,10 +440,8 @@ final class Filesystem
 
             // Skip anything that resolves outside the base directory (e.g. an escaping
             // symlink); otherwise the relative path below would be wrong/empty and could
-            // leak external content into the archive. Compare with forward-slash-normalised
-            // paths so a separator mix on Windows cannot break the check. $basePath has no
-            // trailing separator (rtrim above), so appending one yields exactly one.
-            $normalizedBase = str_replace('\\', '/', $basePath) . '/';
+            // leak external content into the archive. Comparing normalised paths keeps a
+            // separator mix on Windows from defeating the check.
             if (!str_starts_with(str_replace('\\', '/', $realPath), $normalizedBase)) {
                 continue;
             }
