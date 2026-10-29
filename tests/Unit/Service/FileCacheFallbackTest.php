@@ -75,7 +75,8 @@ final class FileCacheFallbackTest extends TestCase
     {
         $dir = $this->posixCacheDir();
         $elsewhere = $this->tmp . '/elsewhere';
-        self::assertTrue(mkdir($elsewhere, 0777));
+        // Private target: only the link itself (lstat, not stat) can cause the refusal.
+        self::assertTrue(mkdir($elsewhere, 0700));
         if (!@symlink($elsewhere, $dir)) {
             self::markTestSkipped('symlinks not supported in this environment');
         }
@@ -88,7 +89,8 @@ final class FileCacheFallbackTest extends TestCase
     {
         $dir = $this->posixCacheDir();
         $elsewhere = $this->tmp . '/elsewhere';
-        self::assertTrue(mkdir($elsewhere, 0777));
+        // Private target: only the link itself (lstat, not stat) can cause the refusal.
+        self::assertTrue(mkdir($elsewhere, 0700));
         $victim = $elsewhere . '/keep.cache';
         self::assertNotFalse(file_put_contents($victim, 'keep'));
         if (!@symlink($elsewhere, $dir)) {
