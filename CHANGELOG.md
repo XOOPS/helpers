@@ -8,6 +8,15 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Security
 
+- **`Utility\Filesystem::unzip()`** — member names were checked, but not what already sat
+  in the destination: a directory link (`sub` → `/etc`) carried `sub/passwd` outside it,
+  and a dangling file link created its target. Every existing component of each output
+  path must now be a non-link that resolves inside the destination, or `unzip()` returns
+  `false` before writing anything. The path checked is the path ext/zip writes, so members
+  with a directory ending in `.` (extracted with that prefix dropped) and, on Windows,
+  members containing `:` are refused, and on POSIX a backslash stays part of the name, in
+  members and in the destination alike. The check precedes extraction, so extract into a
+  directory no untrusted party can change concurrently. (CWE-59)
 - **`Utility\Filesystem::zip()`** — the containment check folded every backslash to a
   forward slash, so on POSIX a symlink inside the source tree pointing at a sibling such
   as `src\secret.txt` compared as `src/secret.txt` and the outside file was archived.

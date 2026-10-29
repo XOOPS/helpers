@@ -429,17 +429,13 @@ final class Filesystem
             return false;
         }
 
-        // A backslash is a separator only on Windows; on POSIX it is an ordinary
-        // filename character and must never be folded, or "src\secret" (a sibling of
-        // src/) would compare as "src/secret" and pass the containment check below.
         $windows = DIRECTORY_SEPARATOR === '\\';
-        $native = static fn (string $path): string => $windows ? strtolower(str_replace('\\', '/', $path)) : $path;
 
         // Strip any trailing separator so the prefix check and substr() below stay
         // correct for a root base path too ("/" or "C:\"); otherwise the guard would
         // build a doubled separator and skip every file, leaving an empty archive.
         $basePath = rtrim($basePath, $windows ? '/\\' : '/');
-        $prefix = $native($basePath) . '/';
+        $prefix = self::comparablePath($basePath) . '/';
 
         foreach ($iterator as $file) {
             if ($file->isDir()) {
@@ -456,7 +452,7 @@ final class Filesystem
             // symlink); otherwise the relative path below would be wrong/empty and could
             // leak external content into the archive. On Windows the comparison folds
             // separators and case; on POSIX it is a byte-exact prefix check.
-            if (!str_starts_with($native($realPath), $prefix)) {
+            if (!str_starts_with(self::comparablePath($realPath), $prefix)) {
                 continue;
             }
 
@@ -482,6 +478,11 @@ final class Filesystem
 
     /**
      * Extract a zip archive to a directory.
+     *
+     * Refused (false, nothing written) when a member name escapes the destination or
+     * when a member would be written through a link already in the destination. The
+     * check runs before extraction: do not extract into a directory that an untrusted
+     * party can modify concurrently. Extract into a fresh private directory instead.
      */
     public static function unzip(string $zipPath, string $destination): bool
     {
@@ -504,7 +505,9 @@ final class Filesystem
             return false;
         }
 
-        $realDest = rtrim($realDest, '/\\') . DIRECTORY_SEPARATOR;
+        // Only the platform's separators are trimmed: on POSIX "out\" is its own directory.
+        $windows = DIRECTORY_SEPARATOR === '\\';
+        $realDest = rtrim($realDest, $windows ? '/\\' : '/') . DIRECTORY_SEPARATOR;
 
         // Validate each entry to prevent Zip Slip (path traversal)
         for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -521,6 +524,10 @@ final class Filesystem
                 str_starts_with($normalized, '/')
                 || str_contains($normalized, '../')
                 || preg_match('/^[A-Za-z]:/', $normalized)
+                // On Windows extraction drops a "C:" inside the basename too ("sub/C:x" writes sub/x).
+                || ($windows && str_contains($normalized, ':'))
+                // Walked as written: on POSIX "a\b" is one filename, not "a" then "b".
+                || !self::isContainedOutputPath($realDest, $windows ? $normalized : $entryName)
             ) {
                 $zip->close();
 
@@ -528,10 +535,66 @@ final class Filesystem
             }
         }
 
-        $result = $zip->extractTo($destination);
+        $result = $zip->extractTo($realDest);
         $zip->close();
 
         return $result;
+    }
+
+    /**
+     * A clean member name can still leave the destination through what already sits in
+     * it: "sub" -> /etc carries "sub/passwd" outside, and a dangling "file.txt" link
+     * creates its target. Each existing component of the output path must be a non-link
+     * that resolves under $realDest (which ends in a separator); the first missing one
+     * ends the walk, as extraction creates the rest as plain directories and files.
+     */
+    private static function isContainedOutputPath(string $realDest, string $member): bool
+    {
+        $prefix = self::comparablePath($realDest);
+        $path = substr($realDest, 0, -1);
+        $parts = explode('/', $member);
+        $last = count($parts) - 1;
+
+        foreach ($parts as $i => $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+
+            // ext/zip drops everything up to a directory named "<x>." ("a./b/c" is written
+            // as "b/c"), so the walk would check a path that is never written.
+            if ($i < $last && str_ends_with($part, '.')) {
+                return false;
+            }
+
+            $path .= DIRECTORY_SEPARATOR . $part;
+
+            if (is_link($path)) {
+                return false;
+            }
+
+            if (!file_exists($path)) {
+                return true;
+            }
+
+            $real = realpath($path);
+
+            if ($real === false || !str_starts_with(self::comparablePath($real) . '/', $prefix)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * A path in the form containment checks compare. A backslash is a separator only on
+     * Windows, where case is folded too; on POSIX it is an ordinary filename character and
+     * must never be folded, or "src\secret" (a sibling of src/) would compare as
+     * "src/secret" and pass a check for src/.
+     */
+    private static function comparablePath(string $path): string
+    {
+        return DIRECTORY_SEPARATOR === '\\' ? strtolower(str_replace('\\', '/', $path)) : $path;
     }
 
     /**
