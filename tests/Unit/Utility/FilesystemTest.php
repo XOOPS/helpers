@@ -389,6 +389,159 @@ final class FilesystemTest extends TestCase
         self::assertFalse($result, 'Zip Slip entry should be rejected');
     }
 
+    public function testUnzipRefusesToWriteThroughALinkedDirectoryInTheDestination(): void
+    {
+        // The member name is clean; the existing destination is not: "sub" leads outside it.
+        $outside = $this->tmp . '/outside';
+        mkdir($outside, 0700);
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        $this->symlinkOrSkip($outside, $dst . '/sub');
+        $zipPath = $this->buildZip(['first.txt' => 'valid', 'sub/planted.txt' => 'payload']);
+
+        // All or nothing: the valid member before the refused one is not written either.
+        self::assertFalse(Filesystem::unzip($zipPath, $dst));
+        self::assertFileDoesNotExist($outside . '/planted.txt');
+        self::assertFileDoesNotExist($dst . '/first.txt');
+    }
+
+    public function testUnzipRefusesToWriteThroughADanglingFileLinkInTheDestination(): void
+    {
+        // A link to a file that does not exist yet: writing the member would create it.
+        $target = $this->tmp . '/created-outside.txt';
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        $this->symlinkOrSkip($target, $dst . '/file.txt');
+
+        self::assertFalse(Filesystem::unzip($this->buildZip(['file.txt' => 'payload']), $dst));
+        self::assertFileDoesNotExist($target);
+    }
+
+    public function testUnzipWalksAnInnerDotComponentAsTheSamePath(): void
+    {
+        // ext/zip writes "a/./file.txt" as "a/file.txt", so the link there is found.
+        $target = $this->tmp . '/created-outside.txt';
+        $dst = $this->tmp . '/dest';
+        mkdir($dst . '/a', 0700, true);
+        $this->symlinkOrSkip($target, $dst . '/a/file.txt');
+
+        $zipPath = $this->buildZip(['a/./file.txt' => 'payload']);
+        self::assertFalse(Filesystem::unzip($zipPath, $dst));
+        self::assertFileDoesNotExist($target);
+
+        // Pin the extraction side too: a plain extract writes exactly the walked path.
+        $clean = $this->tmp . '/clean';
+        mkdir($clean, 0700);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($zipPath));
+        self::assertTrue($zip->extractTo($clean));
+        $zip->close();
+        self::assertFileExists($clean . '/a/file.txt');
+    }
+
+    public function testUnzipChecksABackslashNameAsThePlatformWritesIt(): void
+    {
+        if (DIRECTORY_SEPARATOR === '\\') {
+            self::markTestSkipped('a backslash is a separator on Windows');
+        }
+
+        // On POSIX "a\b.txt" is one filename. Walking it as "a" then "b.txt" would check
+        // a path that is never written and miss the link that is.
+        $target = $this->tmp . '/created-outside.txt';
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        $name = 'a' . chr(92) . 'b.txt';
+        $this->symlinkOrSkip($target, $dst . '/' . $name);
+
+        self::assertFalse(Filesystem::unzip($this->buildZip([$name => 'payload']), $dst));
+        self::assertFileDoesNotExist($target);
+    }
+
+    public function testUnzipRefusesADotEndingDirectoryThatExtractionWouldDrop(): void
+    {
+        // ext/zip drops everything up to a "<name>./" component, so this member is written
+        // as "escape/payload.txt" while "missing./..." does not exist to be checked.
+        $outside = $this->tmp . '/outside';
+        mkdir($outside, 0700);
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        $this->symlinkOrSkip($outside, $dst . '/escape');
+
+        self::assertFalse(Filesystem::unzip($this->buildZip(['missing./escape/payload.txt' => 'payload']), $dst));
+        self::assertFileDoesNotExist($outside . '/payload.txt');
+
+        // The walk stops at the first missing component, so a later "<name>./" must be found too.
+        self::assertFalse(Filesystem::unzip($this->buildZip(['absent/missing./escape/payload.txt' => 'payload']), $dst));
+        self::assertFileDoesNotExist($outside . '/payload.txt');
+    }
+
+    public function testUnzipRefusesAColonInAMemberNameOnWindows(): void
+    {
+        if (DIRECTORY_SEPARATOR !== '\\') {
+            self::markTestSkipped('a colon is an ordinary filename character on POSIX');
+        }
+
+        // Extraction drops the "C:" from the basename, so the file written is not the one checked.
+        self::assertFalse(Filesystem::unzip($this->buildZip(['sub/C:payload.txt' => 'payload']), $this->tmp . '/dest'));
+        self::assertFileDoesNotExist($this->tmp . '/dest/sub/payload.txt');
+    }
+
+    public function testUnzipKeepsABackslashEndingDestinationOnPosix(): void
+    {
+        if (DIRECTORY_SEPARATOR === '\\') {
+            self::markTestSkipped('a backslash is a separator on Windows');
+        }
+
+        // "out\" is its own directory beside "out"; trimming it as a separator would extract into "out".
+        $dst = $this->tmp . '/out' . chr(92);
+        mkdir($this->tmp . '/out', 0700);
+        mkdir($dst, 0700);
+
+        self::assertTrue(Filesystem::unzip($this->buildZip(['file.txt' => 'x']), $dst));
+        self::assertFileExists($dst . '/file.txt');
+        self::assertFileDoesNotExist($this->tmp . '/out/file.txt');
+    }
+
+    public function testUnzipIntoAnExistingDestinationWithRealSubdirectories(): void
+    {
+        $dst = $this->tmp . '/dest';
+        mkdir($dst . '/sub', 0700, true);
+        file_put_contents($dst . '/sub/old.txt', 'old');
+        $zipPath = $this->buildZip(['sub/old.txt' => 'new', 'sub/deeper/more.txt' => 'more']);
+
+        self::assertTrue(Filesystem::unzip($zipPath, $dst));
+        self::assertSame('new', file_get_contents($dst . '/sub/old.txt'));
+        self::assertSame('more', file_get_contents($dst . '/sub/deeper/more.txt'));
+    }
+
+    /**
+     * @param array<string, string> $members member name => contents
+     */
+    private function buildZip(array $members): string
+    {
+        if (!class_exists('ZipArchive')) {
+            self::markTestSkipped('ext-zip not available');
+        }
+
+        $zipPath = $this->tmp . '/' . bin2hex(random_bytes(4)) . '.zip';
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($zipPath, \ZipArchive::CREATE));
+        foreach ($members as $name => $contents) {
+            self::assertTrue($zip->addFromString($name, $contents));
+        }
+        self::assertTrue($zip->close());
+
+        return $zipPath;
+    }
+
+    private function symlinkOrSkip(string $target, string $link): void
+    {
+        // A symlink() listed in disable_functions throws rather than returning false.
+        if (!function_exists('symlink') || !@symlink($target, $link)) {
+            self::markTestSkipped('symlinks not supported in this environment');
+        }
+    }
+
     public function testZipReturnsFalseOnMissingDirectory(): void
     {
         if (!class_exists('ZipArchive')) {
