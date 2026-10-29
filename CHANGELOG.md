@@ -6,6 +6,26 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Security
+
+- **`Utility\Filesystem::zip()`** — the containment check folded every backslash to a
+  forward slash, so on POSIX a symlink inside the source tree pointing at a sibling such
+  as `src\secret.txt` compared as `src/secret.txt` and the outside file was archived.
+  Backslashes are now treated as separators (and case folded) only on Windows. On POSIX,
+  files whose name contains a literal backslash are left out, since extracting on Windows
+  would read it as a path separator. `zip()` also returns `false` when the source
+  directory cannot be resolved.
+- **`Provider\XoopsCacheAdapter`** — the file-cache fallback used when `XOOPS_VAR_PATH`
+  is undefined lived in the shared `sys_get_temp_dir()/xmf_cache`, where another local
+  account could pre-create the directory and plant entry symlinks that redirected cache
+  writes. On POSIX it now uses `xmf_cache_<euid>` (mode 0700) and refuses a linked,
+  foreign-owned or group/other-accessible directory; without ext-posix the file cache is disabled. Entries are
+  written to an exclusively created temp file and renamed into place, so an existing
+  symlink is replaced rather than written through. Expect a one-time cache miss.
+- **Test suite** — the bootstrap now allocates a fresh private test root per run
+  instead of the fixed `sys_get_temp_dir()/xoops_test`; filesystem and language-file
+  fixtures live under it, and fixture setup fails loudly.
+
 ## [1.0.0] — 2026-07-22
 
 First stable release. No breaking changes since 1.0.0 Beta2.

@@ -98,9 +98,9 @@ final class PathTest extends TestCase
     {
         // Build a temp module structure under XOOPS_ROOT_PATH
         $moduleDir  = XOOPS_ROOT_PATH . '/modules/testlang/language/en_US';
-        @mkdir($moduleDir, 0777, true);
+        self::assertTrue(mkdir($moduleDir, 0700, true));
         $file = $moduleDir . '/main.php';
-        file_put_contents($file, '<?php');
+        self::assertNotFalse(file_put_contents($file, '<?php'));
 
         try {
             $result = Path::languageFile('testlang', 'en_US', 'main.php');
@@ -115,9 +115,9 @@ final class PathTest extends TestCase
     public function testLanguageFileFallsBackToEnglishWhenPrimaryMissing(): void
     {
         $englishDir = XOOPS_ROOT_PATH . '/modules/testlang/language/english';
-        @mkdir($englishDir, 0777, true);
+        self::assertTrue(mkdir($englishDir, 0700, true));
         $file = $englishDir . '/main.php';
-        file_put_contents($file, '<?php');
+        self::assertNotFalse(file_put_contents($file, '<?php'));
 
         try {
             // Request 'fr_FR' which doesn't exist, so fallback to 'english'

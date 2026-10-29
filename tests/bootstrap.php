@@ -24,9 +24,20 @@ declare(strict_types=1);
  * full XOOPS installation.
  */
 
-// Mock XOOPS constants
+// Mock XOOPS constants. The root is a fresh private directory per run: a fixed
+// name under the shared temp dir could be pre-created by another local account,
+// with symlinks that redirect fixture writes. Plain mkdir() fails if it exists.
 if (!defined('XOOPS_ROOT_PATH')) {
-    define('XOOPS_ROOT_PATH', sys_get_temp_dir() . '/xoops_test');
+    $xoopsTestRoot = sys_get_temp_dir() . '/xoops_helpers_test_' . bin2hex(random_bytes(16));
+    if (!mkdir($xoopsTestRoot, 0700)) {
+        fwrite(STDERR, "Cannot create the private test root {$xoopsTestRoot}\n");
+        exit(1);
+    }
+    define('XOOPS_ROOT_PATH', $xoopsTestRoot);
+    register_shutdown_function(static function () use ($xoopsTestRoot): void {
+        \Xoops\Helpers\Utility\Filesystem::deleteDirectory($xoopsTestRoot);
+    });
+    unset($xoopsTestRoot);
 }
 if (!defined('XOOPS_URL')) {
     define('XOOPS_URL', 'http://localhost');

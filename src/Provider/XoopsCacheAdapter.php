@@ -31,7 +31,7 @@ use Xoops\Helpers\Contracts\CacheInterface;
  * 3. File-based cache (always available)
  *
  * The file cache stores serialized data with expiration timestamps
- * in XOOPS_VAR_PATH/caches/xmf/ (or system temp directory).
+ * in XOOPS_VAR_PATH/caches/xmf/ (or a per-user system temp directory).
  */
 class XoopsCacheAdapter implements CacheInterface
 {
@@ -144,7 +144,13 @@ class XoopsCacheAdapter implements CacheInterface
 
     private function fileGet(string $key): mixed
     {
-        $file = $this->cacheFilePath($key);
+        $dir = $this->cacheDir();
+
+        if ($dir === null) {
+            return null;
+        }
+
+        $file = $this->cacheFilePath($dir, $key);
 
         if (!file_exists($file)) {
             return null;
@@ -174,24 +180,51 @@ class XoopsCacheAdapter implements CacheInterface
 
     private function fileSet(string $key, mixed $value, int $ttl): bool
     {
-        $file = $this->cacheFilePath($key);
-        $dir = dirname($file);
+        $dir = $this->cacheDir();
+
+        if ($dir === null) {
+            return false;
+        }
 
         if (!is_dir($dir)) {
             @mkdir($dir, 0755, true);
         }
 
-        $data = [
+        $payload = serialize([
             'value' => $value,
             'expires' => $ttl > 0 ? time() + $ttl : 0,
-        ];
+        ]);
 
-        return @file_put_contents($file, serialize($data), LOCK_EX) !== false;
+        // Write a freshly, exclusively created file and rename it over the entry:
+        // rename() replaces whatever sits at the entry name, a symlink included,
+        // instead of writing through it the way file_put_contents() would.
+        $tmp = $dir . '/' . bin2hex(random_bytes(8)) . '.tmp';
+        $handle = @fopen($tmp, 'xb');
+
+        if ($handle === false) {
+            return false;
+        }
+
+        $written = fwrite($handle, $payload) === strlen($payload);
+
+        if (fclose($handle) && $written && @rename($tmp, $this->cacheFilePath($dir, $key))) {
+            return true;
+        }
+
+        @unlink($tmp);
+
+        return false;
     }
 
     private function fileForget(string $key): bool
     {
-        $file = $this->cacheFilePath($key);
+        $dir = $this->cacheDir();
+
+        if ($dir === null) {
+            return true;
+        }
+
+        $file = $this->cacheFilePath($dir, $key);
 
         if (file_exists($file)) {
             return @unlink($file);
@@ -204,7 +237,7 @@ class XoopsCacheAdapter implements CacheInterface
     {
         $dir = $this->cacheDir();
 
-        if (!is_dir($dir)) {
+        if ($dir === null || !is_dir($dir)) {
             return true;
         }
 
@@ -221,18 +254,49 @@ class XoopsCacheAdapter implements CacheInterface
         return true;
     }
 
-    private function cacheDir(): string
+    /**
+     * Cache directory, or null when no trustworthy one is available (run uncached).
+     */
+    private function cacheDir(): ?string
     {
         if (defined('XOOPS_VAR_PATH')) {
             return XOOPS_VAR_PATH . '/caches/xmf';
         }
 
-        return sys_get_temp_dir() . '/xmf_cache';
+        // On Windows %TEMP% is normally per-account, and planting a symlink needs a
+        // privilege that ordinary accounts do not hold.
+        if (DIRECTORY_SEPARATOR === '\\') {
+            return sys_get_temp_dir() . '/xmf_cache';
+        }
+
+        // The POSIX temp dir is shared by every local account. Use a per-user
+        // directory and refuse it when it is a link or another account owns it:
+        // its owner could plant entry symlinks there. Without ext-posix the owner
+        // cannot be checked, so the file cache stays off.
+        if (!function_exists('posix_geteuid')) {
+            return null;
+        }
+
+        $uid = posix_geteuid();
+        $dir = sys_get_temp_dir() . '/xmf_cache_' . $uid;
+
+        if (!@mkdir($dir, 0700) && !is_dir($dir)) {
+            return null;
+        }
+
+        $stat = @lstat($dir);
+
+        // Must be a real directory, ours, and closed to group/other (0700).
+        if ($stat === false || ($stat['mode'] & 0170000) !== 0040000 || $stat['uid'] !== $uid || ($stat['mode'] & 0077) !== 0) {
+            return null;
+        }
+
+        return $dir;
     }
 
-    private function cacheFilePath(string $key): string
+    private function cacheFilePath(string $dir, string $key): string
     {
-        return $this->cacheDir() . '/' . md5($key) . '.cache';
+        return $dir . '/' . md5($key) . '.cache';
     }
 
     private function apcuAvailable(): bool
