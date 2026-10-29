@@ -17,12 +17,13 @@ use Xoops\Helpers\Provider\XoopsCacheAdapter;
 $results = [];
 
 foreach (json_decode($argv[1], true, 8, JSON_THROW_ON_ERROR) as $entry) {
-    [$op, $key, $value] = $entry + [2 => null];
+    [$op, $key, $value] = $entry + [1 => '', 2 => null];
     $cache = new XoopsCacheAdapter();
     $results[] = match ($op) {
         'set' => $cache->set($key, $value),
         'get' => $cache->get($key),
         'forget' => $cache->forget($key),
+        'flush' => $cache->flush(),
     };
 }
 

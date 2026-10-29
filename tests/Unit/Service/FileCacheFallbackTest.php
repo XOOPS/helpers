@@ -84,6 +84,21 @@ final class FileCacheFallbackTest extends TestCase
         self::assertSame([], glob($elsewhere . '/*'));
     }
 
+    public function testFlushLeavesRefusedDirectoryUntouched(): void
+    {
+        $dir = $this->posixCacheDir();
+        $elsewhere = $this->tmp . '/elsewhere';
+        self::assertTrue(mkdir($elsewhere, 0777));
+        $victim = $elsewhere . '/keep.cache';
+        self::assertNotFalse(file_put_contents($victim, 'keep'));
+        if (!@symlink($elsewhere, $dir)) {
+            self::markTestSkipped('symlinks not supported in this environment');
+        }
+
+        self::assertSame([true], $this->runOps([['flush']]));
+        self::assertFileExists($victim);
+    }
+
     public function testOwnCacheDirectoryOpenToOthersIsRefused(): void
     {
         $dir = $this->posixCacheDir();
@@ -119,7 +134,7 @@ final class FileCacheFallbackTest extends TestCase
     }
 
     /**
-     * @param list<array{0: string, 1: string, 2?: string}> $ops
+     * @param list<array{0: string, 1?: string, 2?: string}> $ops
      * @return list<mixed>
      */
     private function runOps(array $ops): array

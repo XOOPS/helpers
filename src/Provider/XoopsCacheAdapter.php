@@ -287,7 +287,12 @@ class XoopsCacheAdapter implements CacheInterface
         $stat = @lstat($dir);
 
         // Must be a real directory, ours, and closed to group/other (0700).
-        if ($stat === false || ($stat['mode'] & 0170000) !== 0040000 || $stat['uid'] !== $uid || ($stat['mode'] & 0077) !== 0) {
+        if (
+            $stat === false
+            || ($stat['mode'] & 0170000) !== 0040000
+            || $stat['uid'] !== $uid
+            || ($stat['mode'] & 0077) !== 0
+        ) {
             return null;
         }
 
