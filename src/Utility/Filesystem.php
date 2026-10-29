@@ -400,6 +400,10 @@ final class Filesystem
      * @param string          $zipPath   Output zip file path
      * @param array<string>|null $include   Glob patterns to include (null = all)
      * @param array<string>|null $exclude   Glob patterns to exclude (null = none)
+     *
+     * Entries resolving outside $directory (e.g. escaping symlinks) are skipped, but the
+     * check runs before ZipArchive reads each file at close(): do not zip a tree that an
+     * untrusted party can modify concurrently — archive a snapshot of it instead.
      */
     public static function zip(string $directory, string $zipPath, ?array $include = null, ?array $exclude = null): bool
     {
@@ -417,15 +421,25 @@ final class Filesystem
             new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
         );
 
+        $basePath = realpath($directory);
+
+        if ($basePath === false) {
+            $zip->close();
+
+            return false;
+        }
+
+        // A backslash is a separator only on Windows; on POSIX it is an ordinary
+        // filename character and must never be folded, or "src\secret" (a sibling of
+        // src/) would compare as "src/secret" and pass the containment check below.
+        $windows = DIRECTORY_SEPARATOR === '\\';
+        $native = static fn (string $path): string => $windows ? strtolower(str_replace('\\', '/', $path)) : $path;
+
         // Strip any trailing separator so the prefix check and substr() below stay
         // correct for a root base path too ("/" or "C:\"); otherwise the guard would
         // build a doubled separator and skip every file, leaving an empty archive.
-        $basePath = rtrim(realpath($directory) ?: $directory, '/\\');
-
-        // Forward-slash-normalised base used by the containment check below. $basePath is
-        // loop-invariant, so this is computed once rather than per directory entry. It has
-        // no trailing separator (rtrim above), so appending one yields exactly one.
-        $normalizedBase = str_replace('\\', '/', $basePath) . '/';
+        $basePath = rtrim($basePath, $windows ? '/\\' : '/');
+        $prefix = $native($basePath) . '/';
 
         foreach ($iterator as $file) {
             if ($file->isDir()) {
@@ -440,13 +454,21 @@ final class Filesystem
 
             // Skip anything that resolves outside the base directory (e.g. an escaping
             // symlink); otherwise the relative path below would be wrong/empty and could
-            // leak external content into the archive. Comparing normalised paths keeps a
-            // separator mix on Windows from defeating the check.
-            if (!str_starts_with(str_replace('\\', '/', $realPath), $normalizedBase)) {
+            // leak external content into the archive. On Windows the comparison folds
+            // separators and case; on POSIX it is a byte-exact prefix check.
+            if (!str_starts_with($native($realPath), $prefix)) {
                 continue;
             }
 
-            $relativePath = ltrim(str_replace('\\', '/', substr($realPath, strlen($basePath))), '/');
+            $relativePath = substr($realPath, strlen($basePath) + 1);
+
+            if ($windows) {
+                $relativePath = str_replace('\\', '/', $relativePath);
+            } elseif (str_contains($relativePath, '\\')) {
+                // A literal backslash would read as a separator when the archive is
+                // extracted on Windows ("a\..\x"), so such files are left out.
+                continue;
+            }
 
             if (!self::matchesGlobs($relativePath, $include, $exclude)) {
                 continue;

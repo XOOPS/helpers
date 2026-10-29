@@ -29,8 +29,9 @@ final class FilesystemTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmp = sys_get_temp_dir() . '/xoops_fs_test_' . uniqid();
-        mkdir($this->tmp, 0775, true);
+        // Under the bootstrap's private root, never a guessable name in the shared temp dir.
+        $this->tmp = XOOPS_ROOT_PATH . '/fs_test_' . bin2hex(random_bytes(8));
+        self::assertTrue(mkdir($this->tmp, 0700));
     }
 
     protected function tearDown(): void
@@ -299,6 +300,66 @@ final class FilesystemTest extends TestCase
         self::assertFileExists($dst . '/inside.txt');
         self::assertFileDoesNotExist($dst . '/link.txt');
         self::assertFileDoesNotExist($dst . '/outside.txt');
+    }
+
+    public function testZipSkipsSymlinkToSiblingWhoseBackslashNameLooksInside(): void
+    {
+        if (!class_exists('ZipArchive')) {
+            self::markTestSkipped('ext-zip not available');
+        }
+        if (DIRECTORY_SEPARATOR === '\\') {
+            self::markTestSkipped('a backslash is a separator on Windows');
+        }
+
+        $src = $this->tmp . '/src';
+        mkdir($src, 0775, true);
+        file_put_contents($src . '/inside.txt', 'inside');
+
+        // "src\secret.txt" sits beside src/, outside it; folding "\" to "/" would
+        // make its real path read as src/secret.txt and pass the containment check.
+        $outside = $this->tmp . '/src' . chr(92) . 'secret.txt';
+        file_put_contents($outside, 'secret');
+        if (!@symlink($outside, $src . '/link.txt')) {
+            self::markTestSkipped('symlinks not supported in this environment');
+        }
+
+        $zipPath = $this->tmp . '/archive.zip';
+        self::assertTrue(Filesystem::zip($src, $zipPath));
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($zipPath));
+        $names = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $names[] = $zip->getNameIndex($i);
+        }
+        $zip->close();
+
+        self::assertSame(['inside.txt'], $names);
+    }
+
+    public function testZipSkipsInTreeFileWithLiteralBackslashInName(): void
+    {
+        if (!class_exists('ZipArchive')) {
+            self::markTestSkipped('ext-zip not available');
+        }
+        if (DIRECTORY_SEPARATOR === '\\') {
+            self::markTestSkipped('a backslash is a separator on Windows');
+        }
+
+        $src = $this->tmp . '/src';
+        mkdir($src, 0775, true);
+        file_put_contents($src . '/inside.txt', 'inside');
+        // As a member name this would extract as a path ("a" then "..") on Windows.
+        file_put_contents($src . '/a' . chr(92) . '..' . chr(92) . 'x.txt', 'x');
+
+        $zipPath = $this->tmp . '/archive.zip';
+        self::assertTrue(Filesystem::zip($src, $zipPath));
+
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($zipPath));
+        self::assertSame(1, $zip->numFiles);
+        self::assertSame('inside.txt', $zip->getNameIndex(0));
+        $zip->close();
     }
 
     public function testUnzipReturnsFalseOnMissingZip(): void
