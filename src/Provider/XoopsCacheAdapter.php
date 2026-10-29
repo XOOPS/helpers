@@ -296,7 +296,7 @@ class XoopsCacheAdapter implements CacheInterface
 
     private function cacheFilePath(string $dir, string $key): string
     {
-        return $dir . '/' . md5($key) . '.cache';
+        return $dir . '/' . hash('sha256', $key) . '.cache';
     }
 
     private function apcuAvailable(): bool

@@ -21,7 +21,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   writes. On POSIX it now uses `xmf_cache_<euid>` (mode 0700) and refuses a linked,
   foreign-owned or group/other-accessible directory; without ext-posix the file cache is disabled. Entries are
   written to an exclusively created temp file and renamed into place, so an existing
-  symlink is replaced rather than written through. Expect a one-time cache miss.
+  symlink is replaced rather than written through. Entry names are now SHA-256 (was
+  MD5) of the key, so every file-cache user sees a one-time cache miss.
 - **Test suite** — the bootstrap now allocates a fresh private test root per run
   instead of the fixed `sys_get_temp_dir()/xoops_test`; filesystem and language-file
   fixtures live under it, and fixture setup fails loudly.

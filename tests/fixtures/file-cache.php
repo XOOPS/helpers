@@ -10,7 +10,7 @@ declare(strict_types=1);
  * Each operation uses a new adapter instance; the results print as a JSON list.
  */
 
-require dirname(__DIR__, 2) . '/vendor/autoload.php';
+require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 
 use Xoops\Helpers\Provider\XoopsCacheAdapter;
 

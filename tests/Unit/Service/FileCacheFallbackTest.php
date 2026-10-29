@@ -61,7 +61,7 @@ final class FileCacheFallbackTest extends TestCase
         self::assertTrue(mkdir($dir, 0700));
         $sentinel = $this->tmp . '/sentinel.txt';
         file_put_contents($sentinel, 'untouched');
-        $entry = $dir . '/' . md5('xmf_k') . '.cache';
+        $entry = $dir . '/' . hash('sha256', 'xmf_k') . '.cache';
         if (!@symlink($sentinel, $entry)) {
             self::markTestSkipped('symlinks not supported in this environment');
         }
@@ -88,7 +88,7 @@ final class FileCacheFallbackTest extends TestCase
     {
         $dir = $this->posixCacheDir();
         self::assertTrue(mkdir($dir));
-        self::assertTrue(chmod($dir, 0777));
+        self::assertTrue(chmod($dir, 0770));
 
         self::assertSame([false, null], $this->runOps([['set', 'k', 'v'], ['get', 'k']]));
         self::assertSame([], glob($dir . '/*'));
