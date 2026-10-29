@@ -555,15 +555,18 @@ final class Filesystem
         $parts = explode('/', $member);
         $last = count($parts) - 1;
 
+        // ext/zip drops everything up to a directory named "<x>." ("a./b/c" is written
+        // as "b/c"), so the walk would check a path that is never written. Checked for every
+        // directory up front: the walk below stops at the first one that does not exist.
         foreach ($parts as $i => $part) {
+            if ($i < $last && $part !== '.' && str_ends_with($part, '.')) {
+                return false;
+            }
+        }
+
+        foreach ($parts as $part) {
             if ($part === '' || $part === '.') {
                 continue;
-            }
-
-            // ext/zip drops everything up to a directory named "<x>." ("a./b/c" is written
-            // as "b/c"), so the walk would check a path that is never written.
-            if ($i < $last && str_ends_with($part, '.')) {
-                return false;
             }
 
             $path .= DIRECTORY_SEPARATOR . $part;

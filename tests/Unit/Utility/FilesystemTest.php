@@ -469,6 +469,10 @@ final class FilesystemTest extends TestCase
 
         self::assertFalse(Filesystem::unzip($this->buildZip(['missing./escape/payload.txt' => 'payload']), $dst));
         self::assertFileDoesNotExist($outside . '/payload.txt');
+
+        // The walk stops at the first missing component, so a later "<name>./" must be found too.
+        self::assertFalse(Filesystem::unzip($this->buildZip(['absent/missing./escape/payload.txt' => 'payload']), $dst));
+        self::assertFileDoesNotExist($outside . '/payload.txt');
     }
 
     public function testUnzipRefusesAColonInAMemberNameOnWindows(): void
