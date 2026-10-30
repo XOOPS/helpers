@@ -205,6 +205,14 @@ final class FilesystemTest extends TestCase
         $this->symlinkOrSkip($src, $src . '/loop');
         $dst = $this->tmp . '/destination';
 
+        if (DIRECTORY_SEPARATOR === '\\') {
+            // readlink() cannot tell a relative link here, and the copy would point into the source.
+            self::assertFalse(Filesystem::copyDirectory($src, $dst));
+            self::assertFalse(is_link($dst . '/loop'));
+
+            return;
+        }
+
         self::assertTrue(Filesystem::copyDirectory($src, $dst));
         self::assertSame('AAA', file_get_contents($dst . '/a.txt'));
         self::assertTrue(is_link($dst . '/loop'));

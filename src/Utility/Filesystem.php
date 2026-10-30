@@ -360,9 +360,11 @@ final class Filesystem
      * A link already inside the destination is never written through (false), except a
      * directory link identical to the one being copied, so a repeated copy succeeds.
      *
-     * On Windows, PHP's symlink() looks up a relative link target from the process working
-     * directory, so a relative directory link usually cannot be recreated: the copy returns
-     * false, and the entries copied before it stay in place.
+     * On Windows, PHP's readlink() returns a relative link's target as a resolved absolute
+     * path, so the original relative text is lost. A directory link whose target is a source
+     * directory is therefore refused (false, the entries copied before it stay in place),
+     * as its copy would point into the source; one leading outside the source is recreated
+     * as an absolute link to the same directory.
      *
      * The checks run before the writes they guard: do not copy from or into a tree that an
      * untrusted party can modify concurrently. Copy a snapshot into a fresh private
@@ -541,7 +543,7 @@ final class Filesystem
             $dstPath = rtrim($destination, $separators) . DIRECTORY_SEPARATOR . $entry;
 
             if (is_link($srcPath) && is_dir($srcPath)) {
-                $copied = self::copyDirectoryLink($srcPath, $dstPath);
+                $copied = self::copyDirectoryLink($srcPath, $dstPath, $sourceIds);
             } elseif (!is_link($srcPath) && self::isLinked($srcPath)) {
                 // A junction cannot be recreated portably, and following it could loop.
                 $copied = false;
@@ -564,13 +566,25 @@ final class Filesystem
 
     /**
      * Recreate a directory link as a link with the same target.
+     *
+     * @param array<string, true> $sourceIds identities of every source directory
      */
-    private static function copyDirectoryLink(string $srcPath, string $dstPath): bool
+    private static function copyDirectoryLink(string $srcPath, string $dstPath, array $sourceIds): bool
     {
         $target = readlink($srcPath);
 
         if ($target === false) {
             return false;
+        }
+
+        // Windows readlink() returns a relative link's resolved absolute target, so a copy
+        // of "..\sibling" would point into the source. Fails closed without an identity.
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $targetId = self::identity($target);
+
+            if ($targetId === null || isset($sourceIds[$targetId])) {
+                return false;
+            }
         }
 
         // An identical link from an earlier copy is kept; a symlink() listed in
