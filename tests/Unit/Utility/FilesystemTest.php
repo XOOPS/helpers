@@ -307,7 +307,7 @@ final class FilesystemTest extends TestCase
         $src = $this->tmp . '/source';
         mkdir($src, 0700);
         file_put_contents($src . '/secret.txt', 'new');
-        chmod($src . '/secret.txt', 0644);
+        chmod($src . '/secret.txt', 0640);
         $dst = $this->tmp . '/destination';
         mkdir($dst, 0700);
         file_put_contents($dst . '/secret.txt', 'old');

@@ -537,47 +537,61 @@ final class Filesystem
             $dstPath = rtrim($destination, $separators) . DIRECTORY_SEPARATOR . $entry;
 
             if (is_link($srcPath) && is_dir($srcPath)) {
-                $target = readlink($srcPath);
-
-                if ($target === false) {
-                    return false;
-                }
-
-                // An identical link from an earlier copy is kept; a symlink() listed in
-                // disable_functions throws rather than returning false.
-                $linked = is_link($dstPath)
-                    ? readlink($dstPath) === $target
-                    : function_exists('symlink') && @symlink($target, $dstPath);
-
-                if (!$linked) {
-                    return false;
-                }
+                $copied = self::copyDirectoryLink($srcPath, $dstPath);
             } elseif (!is_link($srcPath) && self::isLinked($srcPath)) {
                 // A junction cannot be recreated portably, and following it could loop.
-                return false;
+                $copied = false;
             } elseif (self::isLinked($dstPath)) {
                 // An existing link could lead back into the source or anywhere else.
-                return false;
+                $copied = false;
             } elseif (is_dir($srcPath)) {
-                if (!self::copyTree($srcPath, $dstPath, $sourceIds, $created)) {
-                    return false;
-                }
+                $copied = self::copyTree($srcPath, $dstPath, $sourceIds, $created);
             } else {
-                // copy() writes into an existing file, keeping its owner, mode and ACL. One
-                // with other names (a hard link) or that is a source file (a file bind mount)
-                // is refused, as the write would change those too.
-                $stat = is_file($dstPath) ? @stat($dstPath) : false;
+                $copied = self::copyFileInto($srcPath, $dstPath, $sourceIds);
+            }
 
-                if (
-                    ($stat !== false && ($stat['nlink'] > 1 || isset($sourceIds[self::identity($dstPath) ?? ''])))
-                    || !@copy($srcPath, $dstPath)
-                ) {
-                    return false;
-                }
+            if (!$copied) {
+                return false;
             }
         }
 
         return true;
+    }
+
+    /**
+     * Recreate a directory link as a link with the same target.
+     */
+    private static function copyDirectoryLink(string $srcPath, string $dstPath): bool
+    {
+        $target = readlink($srcPath);
+
+        if ($target === false) {
+            return false;
+        }
+
+        // An identical link from an earlier copy is kept; a symlink() listed in
+        // disable_functions throws rather than returning false.
+        return is_link($dstPath)
+            ? readlink($dstPath) === $target
+            : function_exists('symlink') && @symlink($target, $dstPath);
+    }
+
+    /**
+     * copy() writes into an existing file, keeping its owner, mode and ACL. One with other
+     * names (a hard link) or that is a source file (a file bind mount) is refused, as the
+     * write would change those too.
+     *
+     * @param array<string, true> $sourceIds
+     */
+    private static function copyFileInto(string $srcPath, string $dstPath, array $sourceIds): bool
+    {
+        $stat = is_file($dstPath) ? @stat($dstPath) : false;
+
+        if ($stat !== false && ($stat['nlink'] > 1 || isset($sourceIds[self::identity($dstPath) ?? '']))) {
+            return false;
+        }
+
+        return @copy($srcPath, $dstPath);
     }
 
     /**
