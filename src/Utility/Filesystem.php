@@ -391,14 +391,21 @@ final class Filesystem
             return false;
         }
 
-        // An alias no path check sees (a bind mount, a UNC path to a local folder) is caught
-        // by identity: no existing ancestor of the destination may be the source itself.
-        $sourceId = self::identity($realSource);
+        $sourceIds = [];
 
+        // A destination that does not exist yet holds no file that could alias a source file.
+        if (!self::collectSourceIds($realSource, $sourceIds, file_exists($realDest))) {
+            return false;
+        }
+
+        // An alias no path check sees (a bind mount, a UNC path to a local folder) is caught
+        // by identity: no existing ancestor of the destination may be a source directory.
         $path = $realDest;
 
-        while ($sourceId !== null) {
-            if (file_exists($path) && self::identity($path) === $sourceId) {
+        while (true) {
+            $id = file_exists($path) ? self::identity($path) : null;
+
+            if ($id !== null && isset($sourceIds[$id])) {
                 return false;
             }
 
@@ -409,13 +416,6 @@ final class Filesystem
             }
 
             $path = $parent;
-        }
-
-        $sourceIds = [];
-
-        // A destination that does not exist yet holds no file that could alias a source file.
-        if (!self::collectSourceIds($realSource, $sourceIds, file_exists($realDest))) {
-            return false;
         }
 
         // The checked paths are the ones used: mkdir() would apply a ".." in $destination
@@ -614,10 +614,72 @@ final class Filesystem
 
     /**
      * Move (copy then delete) a directory.
+     *
+     * A source that is, or contains, a directory link, junction or dangling link is refused
+     * (false, nothing written): the copy recreates a directory link with its old target,
+     * which after the move would point into the deleted source or, for a relative link,
+     * somewhere else, and deleting a linked source would empty its target. A source ending
+     * in "." or ".." and a filesystem root are refused too; name the directory instead.
      */
     public static function moveDirectory(string $source, string $destination): bool
     {
-        return self::copyDirectory($source, $destination) && self::deleteDirectory($source);
+        $separators = DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/';
+        $root = rtrim($source, $separators);
+        $realSource = is_dir($source) ? realpath($source) : false;
+        $parent = realpath(dirname($root));
+
+        // A linked root (a junction too) resolves away from where it sits in its parent.
+        if (
+            $realSource === false
+            || $parent === false
+            || is_link($root)
+            || self::comparablePath($realSource) !== self::comparablePath(rtrim($parent, $separators) . DIRECTORY_SEPARATOR . basename($root))
+        ) {
+            return false;
+        }
+
+        return !self::containsDirectoryLink($realSource)
+            && self::copyDirectory($realSource, $destination)
+            && self::deleteDirectory($realSource);
+    }
+
+    /**
+     * True when the tree holds a link that is not a link to an existing file (a directory
+     * link, a junction, a dangling link), and (failing closed) when a directory cannot be
+     * read or contains itself further down. $directory must be canonical (realpath()).
+     *
+     * @param array<string, true> $ancestors
+     */
+    private static function containsDirectoryLink(string $directory, array $ancestors = []): bool
+    {
+        $id = self::identity($directory);
+
+        if ($id !== null && isset($ancestors[$id])) {
+            return true;
+        }
+
+        if ($id !== null) {
+            $ancestors[$id] = true;
+        }
+
+        $entries = scandir($directory);
+
+        if ($entries === false) {
+            return true;
+        }
+
+        foreach (array_diff($entries, ['.', '..']) as $entry) {
+            $path = rtrim($directory, DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/') . DIRECTORY_SEPARATOR . $entry;
+
+            // Not gated on is_dir(): to PHP a junction or a dangling link is no directory.
+            $linked = self::isLinked($path);
+
+            if (($linked && !is_file($path)) || (!$linked && is_dir($path) && self::containsDirectoryLink($path, $ancestors))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -801,7 +863,8 @@ final class Filesystem
             }
 
             while (!feof($stream)) {
-                $chunk = fread($stream, 65536);
+                // A corrupt member warns as well as returning false; the false refuses it.
+                $chunk = @fread($stream, 65536);
 
                 if ($chunk === false || ($total += strlen($chunk)) > $maxBytes) {
                     fclose($stream);

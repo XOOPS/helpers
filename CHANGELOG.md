@@ -39,12 +39,15 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   no path check sees (bind mounts, a UNC path to a local folder) are caught by device and
   inode. The source tree's directories are collected first (a tree that contains itself
   further down is refused), and the copy is refused when the destination or one of its
-  ancestors is the source (so `moveDirectory()` can no longer delete what it just
+  ancestors is a source directory (so `moveDirectory()` can no longer delete what it just
   "copied" onto itself), when a destination directory is any source directory, and when
   a source directory is one the copy created. An existing destination file with other
   names (a hard link) or that is a source file (a file bind mount) is refused rather than
   written through. The checks precede the writes, so do not copy from or into a tree an
-  untrusted party can change concurrently. (CWE-674)
+  untrusted party can change concurrently. `moveDirectory()` refuses a source that is, or
+  contains, a directory link, junction or dangling link, leaving it in place: a recreated
+  link would keep its old target and point into the deleted source, and deleting a linked
+  source would empty its target. (CWE-674)
 - **`Utility\Filesystem::zip()`** — the containment check folded every backslash to a
   forward slash, so on POSIX a symlink inside the source tree pointing at a sibling such
   as `src\secret.txt` compared as `src/secret.txt` and the outside file was archived.

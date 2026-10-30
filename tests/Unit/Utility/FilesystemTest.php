@@ -30,6 +30,9 @@ final class FilesystemTest extends TestCase
     /** @var list<string> */
     private array $junctions = [];
 
+    /** @var list<string> */
+    private array $mounts = [];
+
     protected function setUp(): void
     {
         // Under the bootstrap's private root, never a guessable name in the shared temp dir.
@@ -42,6 +45,11 @@ final class FilesystemTest extends TestCase
         // deleteDirectory() cannot unlink a junction; rmdir() removes it without its target.
         foreach ($this->junctions as $junction) {
             @rmdir($junction);
+        }
+
+        // Unmount first, or deleteDirectory() would empty the mounted source through it.
+        foreach ($this->mounts as $mount) {
+            exec('umount ' . escapeshellarg($mount));
         }
 
         if (is_dir($this->tmp)) {
@@ -196,6 +204,17 @@ final class FilesystemTest extends TestCase
         self::assertDirectoryDoesNotExist($this->tmp . '/missing');
     }
 
+    public function testCopyDirectoryRefusesADestinationInABindMountOfASourceSubdirectory(): void
+    {
+        $src = $this->tmp . '/source';
+        mkdir($src . '/sub', 0700, true);
+        mkdir($this->tmp . '/mount', 0700);
+        $this->bindMountOrSkip($src . '/sub', $this->tmp . '/mount');
+
+        self::assertFalse(Filesystem::copyDirectory($src, $this->tmp . '/mount/new'));
+        self::assertDirectoryDoesNotExist($src . '/sub/new');
+    }
+
     public function testCopyDirectoryRecreatesADirectoryLinkInsteadOfFollowingIt(): void
     {
         // "loop" points back at the source: following it would copy the tree into itself without end.
@@ -220,6 +239,93 @@ final class FilesystemTest extends TestCase
 
         // Copying again keeps the identical link instead of failing on it.
         self::assertTrue(Filesystem::copyDirectory($src, $dst));
+    }
+
+    public function testMoveDirectoryMovesTheTree(): void
+    {
+        $src = $this->tmp . '/source';
+        mkdir($src . '/sub', 0700, true);
+        file_put_contents($src . '/sub/a.txt', 'AAA');
+
+        self::assertTrue(Filesystem::moveDirectory($src, $this->tmp . '/moved'));
+        self::assertSame('AAA', file_get_contents($this->tmp . '/moved/sub/a.txt'));
+        self::assertDirectoryDoesNotExist($src);
+    }
+
+    public function testMoveDirectoryRefusesASourceHoldingADirectoryLink(): void
+    {
+        // The recreated link would point into the deleted source.
+        $src = $this->tmp . '/source';
+        mkdir($src . '/sub/target', 0700, true);
+        file_put_contents($src . '/sub/target/a.txt', 'AAA');
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $this->junctionOrSkip($src . '/sub/target', $src . '/sub/link');
+        } else {
+            $this->symlinkOrSkip($src . '/sub/target', $src . '/sub/link');
+        }
+
+        self::assertFalse(Filesystem::moveDirectory($src, $this->tmp . '/moved'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/moved');
+        self::assertSame('AAA', file_get_contents($src . '/sub/target/a.txt'));
+    }
+
+    public function testMoveDirectoryAcceptsARelativeSource(): void
+    {
+        mkdir($this->tmp . '/source/sub', 0700, true);
+        file_put_contents($this->tmp . '/source/sub/a.txt', 'AAA');
+        $cwd = getcwd();
+        self::assertIsString($cwd);
+        chdir($this->tmp);
+
+        try {
+            self::assertTrue(Filesystem::moveDirectory('./source/', 'moved'));
+        } finally {
+            chdir($cwd);
+        }
+
+        self::assertSame('AAA', file_get_contents($this->tmp . '/moved/sub/a.txt'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/source');
+    }
+
+    public function testMoveDirectoryRefusesADotEndingSource(): void
+    {
+        mkdir($this->tmp . '/source/sub', 0700, true);
+
+        self::assertFalse(Filesystem::moveDirectory($this->tmp . '/source/sub/..', $this->tmp . '/moved'));
+        self::assertFalse(Filesystem::moveDirectory($this->tmp . '/source/.', $this->tmp . '/moved'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/moved');
+        self::assertDirectoryExists($this->tmp . '/source/sub');
+    }
+
+    public function testMoveDirectoryRefusesALinkedSourceRoot(): void
+    {
+        // Deleting through the link would empty its target.
+        mkdir($this->tmp . '/target', 0700);
+        file_put_contents($this->tmp . '/target/a.txt', 'AAA');
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $this->junctionOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        } else {
+            $this->symlinkOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        }
+
+        self::assertFalse(Filesystem::moveDirectory($this->tmp . '/link', $this->tmp . '/moved'));
+        self::assertFalse(Filesystem::moveDirectory($this->tmp . '/link/', $this->tmp . '/moved'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/moved');
+        self::assertSame('AAA', file_get_contents($this->tmp . '/target/a.txt'));
+    }
+
+    public function testMoveDirectoryRefusesASourceHoldingADanglingLink(): void
+    {
+        $src = $this->tmp . '/source';
+        mkdir($src, 0700);
+        file_put_contents($src . '/a.txt', 'AAA');
+        $this->symlinkOrSkip($this->tmp . '/gone', $src . '/z-dangling');
+
+        self::assertFalse(Filesystem::moveDirectory($src, $this->tmp . '/moved'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/moved');
+        self::assertSame('AAA', file_get_contents($src . '/a.txt'));
     }
 
     public function testCopyDirectoryRefusesALinkAlreadyInTheDestination(): void
@@ -281,7 +387,7 @@ final class FilesystemTest extends TestCase
         $this->junctionOrSkip($src, $src . '/loop');
 
         self::assertFalse(Filesystem::copyDirectory($src, $this->tmp . '/destination'));
-        self::assertDirectoryDoesNotExist($this->tmp . '/destination/loop/loop');
+        self::assertFileDoesNotExist($this->tmp . '/destination/loop');
     }
 
     public function testCopyDirectoryRefusesAJunctionInTheDestination(): void
@@ -729,6 +835,20 @@ final class FilesystemTest extends TestCase
         self::assertSame(600, filesize($this->tmp . '/unlimited/b.txt'));
     }
 
+    public function testUnzipReturnsFalseWithoutAWarningForACorruptMember(): void
+    {
+        $zipPath = $this->buildZip(['a.txt' => str_repeat('a', 100000)]);
+        $bytes = file_get_contents($zipPath);
+        self::assertIsString($bytes);
+
+        // The deflated data starts after the 30-byte local header and the 5-byte name.
+        file_put_contents($zipPath, substr_replace($bytes, str_repeat("\xFF", 20), 40, 20));
+
+        // failOnWarning: a warning from the size check would fail this test.
+        self::assertFalse(Filesystem::unzip($zipPath, $this->tmp . '/dest'));
+        self::assertFileDoesNotExist($this->tmp . '/dest/a.txt');
+    }
+
     public function testUnzipCountsAMemberAcrossSeveralReads(): void
     {
         // Larger than one 64 KiB read, so the count must carry across chunks.
@@ -812,6 +932,22 @@ final class FilesystemTest extends TestCase
         exec('cmd /c mklink /J ' . escapeshellarg($toWindows($junction)) . ' ' . escapeshellarg($toWindows($target)), $output, $code);
         self::assertSame(0, $code, implode("\n", $output));
         $this->junctions[] = $junction;
+    }
+
+    private function bindMountOrSkip(string $target, string $mountPoint): void
+    {
+        // Needs root with CAP_SYS_ADMIN (a privileged container); skipped everywhere else.
+        if (DIRECTORY_SEPARATOR === '\\' || !function_exists('posix_geteuid') || posix_geteuid() !== 0) {
+            self::markTestSkipped('bind mounts need root on Linux');
+        }
+
+        exec('mount --bind ' . escapeshellarg($target) . ' ' . escapeshellarg($mountPoint) . ' 2>&1', $output, $code);
+
+        if ($code !== 0) {
+            self::markTestSkipped('bind mount not permitted: ' . implode(' ', $output));
+        }
+
+        $this->mounts[] = $mountPoint;
     }
 
     private function symlinkOrSkip(string $target, string $link): void
