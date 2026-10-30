@@ -530,9 +530,9 @@ final class FilesystemTest extends TestCase
             self::markTestSkipped('root can write a read-only file');
         }
 
-        mkdir($this->tmp . '/rel/sub', 0777, true);
+        mkdir($this->tmp . '/rel/sub', 0700, true);
         file_put_contents($this->tmp . '/rel/sub/locked.txt', 'x');
-        chmod($this->tmp . '/rel/sub/locked.txt', 0444);
+        chmod($this->tmp . '/rel/sub/locked.txt', 0400);
         $cwd = getcwd();
         self::assertIsString($cwd);
         chdir($this->tmp);
@@ -541,7 +541,7 @@ final class FilesystemTest extends TestCase
             self::assertFalse(Filesystem::isWritableRecursive('rel'));
         } finally {
             chdir($cwd);
-            chmod($this->tmp . '/rel/sub/locked.txt', 0644);
+            chmod($this->tmp . '/rel/sub/locked.txt', 0600);
         }
     }
 
