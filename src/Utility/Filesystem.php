@@ -360,6 +360,10 @@ final class Filesystem
      * A link already inside the destination is never written through (false), except a
      * directory link identical to the one being copied, so a repeated copy succeeds.
      *
+     * On Windows, PHP's symlink() looks up a relative link target from the process working
+     * directory, so a relative directory link usually cannot be recreated: the copy returns
+     * false, and the entries copied before it stay in place.
+     *
      * The checks run before the writes they guard: do not copy from or into a tree that an
      * untrusted party can modify concurrently. Copy a snapshot into a fresh private
      * directory instead.
