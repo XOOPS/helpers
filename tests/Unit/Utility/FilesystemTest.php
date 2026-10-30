@@ -27,6 +27,9 @@ final class FilesystemTest extends TestCase
 {
     private string $tmp;
 
+    /** @var list<string> */
+    private array $junctions = [];
+
     protected function setUp(): void
     {
         // Under the bootstrap's private root, never a guessable name in the shared temp dir.
@@ -36,6 +39,11 @@ final class FilesystemTest extends TestCase
 
     protected function tearDown(): void
     {
+        // deleteDirectory() cannot unlink a junction; rmdir() removes it without its target.
+        foreach ($this->junctions as $junction) {
+            @rmdir($junction);
+        }
+
         if (is_dir($this->tmp)) {
             Filesystem::deleteDirectory($this->tmp);
         }
@@ -152,6 +160,198 @@ final class FilesystemTest extends TestCase
     public function testCopyDirectoryReturnsFalseIfSourceMissing(): void
     {
         self::assertFalse(Filesystem::copyDirectory($this->tmp . '/nosource', $this->tmp . '/dst'));
+    }
+
+    public function testCopyDirectoryRefusesADestinationInsideTheSource(): void
+    {
+        $src = $this->tmp . '/source';
+        mkdir($src, 0700);
+        file_put_contents($src . '/a.txt', 'AAA');
+        mkdir($this->tmp . '/other', 0700);
+
+        // Each spelling resolves to the source or below it; the copy would walk its own output.
+        foreach (['/source', '/source/', '/source/copy/deeper', '/other/missing/../../source/copy'] as $dst) {
+            self::assertFalse(Filesystem::copyDirectory($src, $this->tmp . $dst), $dst);
+        }
+        self::assertSame(['.', '..', 'a.txt'], scandir($src));
+        self::assertDirectoryDoesNotExist($this->tmp . '/other/missing');
+
+        // A sibling that only shares the name prefix is not inside it.
+        self::assertTrue(Filesystem::copyDirectory($src, $this->tmp . '/source-copy'));
+        self::assertSame('AAA', file_get_contents($this->tmp . '/source-copy/a.txt'));
+    }
+
+    public function testCopyDirectoryRefusesADestinationReachedThroughALinkIntoTheSource(): void
+    {
+        $src = $this->tmp . '/source';
+        mkdir($src . '/sub', 0700, true);
+        $this->symlinkOrSkip($src . '/sub', $this->tmp . '/alias');
+
+        self::assertFalse(Filesystem::copyDirectory($src, $this->tmp . '/alias/copy'));
+        self::assertDirectoryDoesNotExist($src . '/sub/copy');
+
+        // The ".." climbs out of a missing directory and back through the link.
+        self::assertFalse(Filesystem::copyDirectory($src, $this->tmp . '/missing/../alias/copy'));
+        self::assertDirectoryDoesNotExist($src . '/sub/copy');
+        self::assertDirectoryDoesNotExist($this->tmp . '/missing');
+    }
+
+    public function testCopyDirectoryRecreatesADirectoryLinkInsteadOfFollowingIt(): void
+    {
+        // "loop" points back at the source: following it would copy the tree into itself without end.
+        $src = $this->tmp . '/source';
+        mkdir($src, 0700);
+        file_put_contents($src . '/a.txt', 'AAA');
+        $this->symlinkOrSkip($src, $src . '/loop');
+        $dst = $this->tmp . '/destination';
+
+        self::assertTrue(Filesystem::copyDirectory($src, $dst));
+        self::assertSame('AAA', file_get_contents($dst . '/a.txt'));
+        self::assertTrue(is_link($dst . '/loop'));
+        self::assertSame(readlink($src . '/loop'), readlink($dst . '/loop'));
+
+        // Copying again keeps the identical link instead of failing on it.
+        self::assertTrue(Filesystem::copyDirectory($src, $dst));
+    }
+
+    public function testCopyDirectoryRefusesALinkAlreadyInTheDestination(): void
+    {
+        // dst/a leads back to src/a/out: following it would copy src/a into itself.
+        $src = $this->tmp . '/source';
+        mkdir($src . '/a/out', 0700, true);
+        $dst = $this->tmp . '/destination';
+        mkdir($dst, 0700);
+        $this->symlinkOrSkip($src . '/a/out', $dst . '/a');
+
+        self::assertFalse(Filesystem::copyDirectory($src, $dst));
+        self::assertDirectoryDoesNotExist($src . '/a/out/out');
+    }
+
+    public function testCopyDirectoryCopiesToWhereTheCheckedPathLeads(): void
+    {
+        // "zlink/.." is the source's parent once the link is followed, but recursive mkdir()
+        // would apply the ".." lexically and create source/out, inside the source.
+        $src = $this->tmp . '/source';
+        mkdir($src, 0700);
+        file_put_contents($src . '/a.txt', 'AAA');
+        mkdir($this->tmp . '/elsewhere/deeper', 0700, true);
+        $this->symlinkOrSkip($this->tmp . '/elsewhere/deeper', $src . '/zlink');
+
+        self::assertTrue(Filesystem::copyDirectory($src, $src . '/zlink/../out'));
+        self::assertSame('AAA', file_get_contents($this->tmp . '/elsewhere/out/a.txt'));
+        self::assertDirectoryDoesNotExist($src . '/out');
+
+        // After "missing/..", "zlink/.." must still follow the link, not drop it lexically.
+        self::assertTrue(Filesystem::copyDirectory($src, $src . '/missing/../zlink/../again'));
+        self::assertSame('AAA', file_get_contents($this->tmp . '/elsewhere/again/a.txt'));
+        self::assertDirectoryDoesNotExist($src . '/again');
+        self::assertDirectoryDoesNotExist($src . '/missing');
+    }
+
+    public function testCopyDirectoryRefusesToWriteThroughAHardLinkInTheDestination(): void
+    {
+        $src = $this->tmp . '/source';
+        mkdir($src, 0700);
+        file_put_contents($src . '/a.txt', 'new');
+        $outside = $this->tmp . '/outside.txt';
+        file_put_contents($outside, 'old');
+        $dst = $this->tmp . '/destination';
+        mkdir($dst, 0700);
+
+        if (!function_exists('link') || !@link($outside, $dst . '/a.txt')) {
+            self::markTestSkipped('hard links not supported in this environment');
+        }
+
+        self::assertFalse(Filesystem::copyDirectory($src, $dst));
+        self::assertSame('old', file_get_contents($outside));
+    }
+
+    public function testCopyDirectoryRefusesAJunctionInTheSource(): void
+    {
+        $src = $this->tmp . '/source';
+        mkdir($src, 0700);
+        $this->junctionOrSkip($src, $src . '/loop');
+
+        self::assertFalse(Filesystem::copyDirectory($src, $this->tmp . '/destination'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/destination/loop/loop');
+    }
+
+    public function testCopyDirectoryRefusesAJunctionInTheDestination(): void
+    {
+        $src = $this->tmp . '/source';
+        mkdir($src . '/sub', 0700, true);
+        file_put_contents($src . '/sub/payload.txt', 'payload');
+        $outside = $this->tmp . '/outside';
+        mkdir($outside, 0700);
+        $dst = $this->tmp . '/destination';
+        mkdir($dst, 0700);
+        $this->junctionOrSkip($outside, $dst . '/sub');
+
+        self::assertFalse(Filesystem::copyDirectory($src, $dst));
+        self::assertFileDoesNotExist($outside . '/payload.txt');
+    }
+
+    public function testCopyDirectoryReturnsFalseForAnEmptySource(): void
+    {
+        // realpath('') is the working directory, which must not be copied.
+        self::assertFalse(Filesystem::copyDirectory('', $this->tmp . '/dst'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/dst');
+    }
+
+    public function testCopyDirectoryKeepsTheModeOfAReplacedFile(): void
+    {
+        if (DIRECTORY_SEPARATOR === '\\') {
+            self::markTestSkipped('POSIX permissions');
+        }
+
+        $src = $this->tmp . '/source';
+        mkdir($src, 0700);
+        file_put_contents($src . '/secret.txt', 'new');
+        chmod($src . '/secret.txt', 0644);
+        $dst = $this->tmp . '/destination';
+        mkdir($dst, 0700);
+        file_put_contents($dst . '/secret.txt', 'old');
+        chmod($dst . '/secret.txt', 0600);
+
+        self::assertTrue(Filesystem::copyDirectory($src, $dst));
+        clearstatcache();
+        self::assertSame('new', file_get_contents($dst . '/secret.txt'));
+        self::assertSame(0600, fileperms($dst . '/secret.txt') & 0777);
+    }
+
+    public function testCopyDirectoryCopiesAFileNamedNearTheLengthLimit(): void
+    {
+        if (DIRECTORY_SEPARATOR === '\\') {
+            self::markTestSkipped('MAX_PATH, not the name limit, binds first on Windows');
+        }
+
+        // A temporary name derived from this one would pass the 255-byte name limit.
+        $name = str_repeat('n', 250);
+        $src = $this->tmp . '/source';
+        mkdir($src, 0700);
+        file_put_contents($src . '/' . $name, 'x');
+
+        self::assertTrue(Filesystem::copyDirectory($src, $this->tmp . '/destination'));
+        self::assertSame('x', file_get_contents($this->tmp . '/destination/' . $name));
+    }
+
+    public function testCopyDirectoryReturnsFalseForAnEmptyDestination(): void
+    {
+        $src = $this->tmp . '/source';
+        mkdir($src, 0700);
+        file_put_contents($src . '/stray.txt', 'x');
+
+        self::assertFalse(Filesystem::copyDirectory($src, ''));
+        self::assertFileDoesNotExist(getcwd() . '/stray.txt');
+    }
+
+    public function testCopyDirectoryReturnsFalseOntoAnExistingFile(): void
+    {
+        mkdir($this->tmp . '/empty', 0700);
+        file_put_contents($this->tmp . '/file.txt', 'keep');
+
+        self::assertFalse(Filesystem::copyDirectory($this->tmp . '/empty', $this->tmp . '/file.txt'));
+        self::assertSame('keep', file_get_contents($this->tmp . '/file.txt'));
     }
 
     // ── File inspection ─────────────────────────────────────
@@ -502,6 +702,65 @@ final class FilesystemTest extends TestCase
         self::assertFileDoesNotExist($this->tmp . '/out/file.txt');
     }
 
+    public function testUnzipRefusesAnArchiveExpandingPastTheByteBudget(): void
+    {
+        $zipPath = $this->buildZip(['a.txt' => str_repeat('a', 600), 'b.txt' => str_repeat('b', 600)]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($zipPath));
+        self::assertTrue($zip->addEmptyDir('empty'));
+        self::assertTrue($zip->close());
+        $dst = $this->tmp . '/dest';
+
+        // 1200 bytes in total: each member fits, the sum does not. All or nothing.
+        self::assertFalse(Filesystem::unzip($zipPath, $dst, 1000));
+        self::assertFileDoesNotExist($dst . '/a.txt');
+
+        self::assertTrue(Filesystem::unzip($zipPath, $dst, 1200));
+        self::assertDirectoryExists($dst . '/empty');
+        self::assertTrue(Filesystem::unzip($zipPath, $this->tmp . '/unlimited', null));
+        self::assertSame(600, filesize($this->tmp . '/unlimited/b.txt'));
+    }
+
+    public function testUnzipCountsAMemberAcrossSeveralReads(): void
+    {
+        // Larger than one 64 KiB read, so the count must carry across chunks.
+        $zipPath = $this->buildZip(['big.txt' => str_repeat('z', 200000)]);
+
+        self::assertFalse(Filesystem::unzip($zipPath, $this->tmp . '/dest', 199999));
+        self::assertFileDoesNotExist($this->tmp . '/dest/big.txt');
+        self::assertTrue(Filesystem::unzip($zipPath, $this->tmp . '/dest', 200000));
+        self::assertSame(200000, filesize($this->tmp . '/dest/big.txt'));
+    }
+
+    public function testUnzipCountsTheBytesAMemberExpandsToNotItsDeclaredSize(): void
+    {
+        // Patch the uncompressed size in the local header (offset 22) and the central
+        // directory entry (offset 24) down to 10 bytes; the member still expands to 5000.
+        $zipPath = $this->buildZip(['big.txt' => str_repeat('A', 5000)]);
+        $bin = (string) file_get_contents($zipPath);
+        $bin = substr_replace($bin, pack('V', 10), (int) strpos($bin, "PK\x03\x04") + 22, 4);
+        $bin = substr_replace($bin, pack('V', 10), (int) strpos($bin, "PK\x01\x02") + 24, 4);
+        file_put_contents($zipPath, $bin);
+        $dst = $this->tmp . '/dest';
+
+        self::assertFalse(Filesystem::unzip($zipPath, $dst, 1000));
+        self::assertFileDoesNotExist($dst . '/big.txt');
+    }
+
+    public function testUnzipRefusesARepeatedMemberName(): void
+    {
+        // Renaming "dupB.txt" to "dupA.txt" in the headers gives two members with one name.
+        $zipPath = $this->buildZip(['dupA.txt' => str_repeat('a', 600), 'dupB.txt' => '']);
+        file_put_contents($zipPath, str_replace('dupB.txt', 'dupA.txt', (string) file_get_contents($zipPath)));
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($zipPath));
+        self::assertSame(2, $zip->numFiles);
+        $zip->close();
+
+        self::assertFalse(Filesystem::unzip($zipPath, $this->tmp . '/dest', 1000));
+        self::assertFileDoesNotExist($this->tmp . '/dest/dupA.txt');
+    }
+
     public function testUnzipIntoAnExistingDestinationWithRealSubdirectories(): void
     {
         $dst = $this->tmp . '/dest';
@@ -532,6 +791,19 @@ final class FilesystemTest extends TestCase
         self::assertTrue($zip->close());
 
         return $zipPath;
+    }
+
+    private function junctionOrSkip(string $target, string $junction): void
+    {
+        if (DIRECTORY_SEPARATOR !== '\\') {
+            self::markTestSkipped('junctions exist only on Windows');
+        }
+
+        // Unlike a symlink, a junction needs no privilege.
+        $toWindows = static fn (string $p): string => str_replace('/', DIRECTORY_SEPARATOR, $p);
+        exec('cmd /c mklink /J ' . escapeshellarg($toWindows($junction)) . ' ' . escapeshellarg($toWindows($target)), $output, $code);
+        self::assertSame(0, $code, implode("\n", $output));
+        $this->junctions[] = $junction;
     }
 
     private function symlinkOrSkip(string $target, string $link): void
