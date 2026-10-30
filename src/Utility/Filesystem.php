@@ -176,7 +176,8 @@ final class Filesystem
     public static function isWritableRecursive(string $directory): bool
     {
         // Canonical, so isLinked() tells a link from a relative or linked-parent path.
-        $real = realpath($directory);
+        // realpath('') is the working directory, which '' never named.
+        $real = $directory === '' ? false : realpath($directory);
 
         if ($real === false || !is_dir($real) || !is_writable($real)) {
             return false;
