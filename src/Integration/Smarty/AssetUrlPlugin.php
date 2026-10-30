@@ -21,6 +21,7 @@ declare(strict_types=1);
 namespace Xoops\Helpers\Integration\Smarty;
 
 use Xoops\Helpers\Service\Url;
+use Xoops\Helpers\Utility\HtmlBuilder;
 
 /**
  * Smarty plugin for generating asset URLs.
@@ -58,6 +59,7 @@ final class AssetUrlPlugin
             ? $secureParam
             : (filter_var($secureParam, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false);
 
-        return Url::asset($path, $secure);
+        // Smarty prints function output unescaped, and templates put it in attributes.
+        return HtmlBuilder::escape(Url::asset($path, $secure));
     }
 }

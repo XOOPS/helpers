@@ -513,6 +513,47 @@ final class FilesystemTest extends TestCase
         self::assertTrue(Filesystem::isWritableRecursive($dir));
     }
 
+    public function testIsWritableRecursiveDoesNotFollowADirectorySymlink(): void
+    {
+        // A link back to the root would recurse until the path grows too long.
+        $dir = $this->tmp . '/looped';
+        mkdir($dir);
+        $this->symlinkOrSkip($dir, $dir . '/loop');
+
+        self::assertSame(['.', '..', 'loop'], scandir($dir));
+        self::assertTrue(Filesystem::isWritableRecursive($dir));
+    }
+
+    public function testIsWritableRecursiveChecksNestedEntriesOfARelativePath(): void
+    {
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            self::markTestSkipped('root can write a read-only file');
+        }
+
+        mkdir($this->tmp . '/rel/sub', 0777, true);
+        file_put_contents($this->tmp . '/rel/sub/locked.txt', 'x');
+        chmod($this->tmp . '/rel/sub/locked.txt', 0444);
+        $cwd = getcwd();
+        self::assertIsString($cwd);
+        chdir($this->tmp);
+
+        try {
+            self::assertFalse(Filesystem::isWritableRecursive('rel'));
+        } finally {
+            chdir($cwd);
+            chmod($this->tmp . '/rel/sub/locked.txt', 0644);
+        }
+    }
+
+    public function testIsWritableRecursiveDoesNotFollowAJunction(): void
+    {
+        $dir = $this->tmp . '/junctioned';
+        mkdir($dir);
+        $this->junctionOrSkip($dir, $dir . '/loop');
+
+        self::assertTrue(Filesystem::isWritableRecursive($dir));
+    }
+
     public function testIsWritableRecursiveReturnsFalseForNonDir(): void
     {
         self::assertFalse(Filesystem::isWritableRecursive($this->tmp . '/notadir'));
