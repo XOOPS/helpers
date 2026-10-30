@@ -170,14 +170,21 @@ final class Filesystem
 
     /**
      * Check if a directory and all its contents are writable.
+     *
+     * Directory links and junctions are checked as entries; their targets are not.
      */
     public static function isWritableRecursive(string $directory): bool
     {
-        if (!is_dir($directory) || !is_writable($directory)) {
+        // Canonical, so isLinked() tells a link from a relative or linked-parent path.
+        // realpath('') is the working directory, which '' never named.
+        $real = $directory === '' ? false : realpath($directory);
+
+        if ($real === false || !is_dir($real) || !is_writable($real)) {
             return false;
         }
 
-        $entries = scandir($directory);
+        $directory = rtrim($real, DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/');
+        $entries = scandir($real);
 
         if ($entries === false) {
             return false;
@@ -190,7 +197,9 @@ final class Filesystem
 
             $path = $directory . DIRECTORY_SEPARATOR . $entry;
 
-            if (is_dir($path)) {
+            // A directory link is checked as an entry, not followed: a link to an
+            // ancestor would recurse until the path grows too long.
+            if (is_dir($path) && !self::isLinked($path)) {
                 if (!self::isWritableRecursive($path)) {
                     return false;
                 }

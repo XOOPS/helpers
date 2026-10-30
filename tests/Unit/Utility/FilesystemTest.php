@@ -513,6 +513,89 @@ final class FilesystemTest extends TestCase
         self::assertTrue(Filesystem::isWritableRecursive($dir));
     }
 
+    public function testIsWritableRecursiveDoesNotFollowADirectorySymlink(): void
+    {
+        // A link back to the root would recurse until the path grows too long.
+        $dir = $this->tmp . '/looped';
+        mkdir($dir);
+        $this->symlinkOrSkip($dir, $dir . '/loop');
+
+        self::assertSame(['.', '..', 'loop'], scandir($dir));
+        self::assertTrue(Filesystem::isWritableRecursive($dir));
+    }
+
+    public function testIsWritableRecursiveDoesNotCheckALinkTarget(): void
+    {
+        $target = $this->tmp . '/linktarget';
+        $dir = $this->tmp . '/linking';
+        mkdir($target);
+        mkdir($dir);
+        file_put_contents($target . '/locked.txt', 'x');
+        chmod($target . '/locked.txt', 0400);
+
+        try {
+            if (is_writable($target . '/locked.txt')) {
+                self::markTestSkipped('read-only mode not enforced here (root?)');
+            }
+
+            if (DIRECTORY_SEPARATOR === '\\') {
+                $this->junctionOrSkip($target, $dir . '/link');
+            } else {
+                $this->symlinkOrSkip($target, $dir . '/link');
+            }
+
+            self::assertFalse(Filesystem::isWritableRecursive($target));
+            self::assertTrue(Filesystem::isWritableRecursive($dir));
+        } finally {
+            chmod($target . '/locked.txt', 0600);
+        }
+    }
+
+    public function testIsWritableRecursiveChecksNestedEntriesOfARelativePath(): void
+    {
+        mkdir($this->tmp . '/rel/sub', 0700, true);
+        file_put_contents($this->tmp . '/rel/sub/locked.txt', 'x');
+        chmod($this->tmp . '/rel/sub/locked.txt', 0400);
+        $cwd = getcwd();
+        self::assertIsString($cwd);
+
+        try {
+            if (is_writable($this->tmp . '/rel/sub/locked.txt')) {
+                self::markTestSkipped('read-only mode not enforced here (root?)');
+            }
+
+            chdir($this->tmp);
+            self::assertFalse(Filesystem::isWritableRecursive('rel'));
+        } finally {
+            chdir($cwd);
+            chmod($this->tmp . '/rel/sub/locked.txt', 0600);
+        }
+    }
+
+    public function testIsWritableRecursiveReturnsFalseForAnEmptyPath(): void
+    {
+        // realpath('') is the working directory, here a writable one.
+        $cwd = getcwd();
+        self::assertIsString($cwd);
+        mkdir($this->tmp . '/cwd');
+        chdir($this->tmp . '/cwd');
+
+        try {
+            self::assertFalse(Filesystem::isWritableRecursive(''));
+        } finally {
+            chdir($cwd);
+        }
+    }
+
+    public function testIsWritableRecursiveDoesNotFollowAJunction(): void
+    {
+        $dir = $this->tmp . '/junctioned';
+        mkdir($dir);
+        $this->junctionOrSkip($dir, $dir . '/loop');
+
+        self::assertTrue(Filesystem::isWritableRecursive($dir));
+    }
+
     public function testIsWritableRecursiveReturnsFalseForNonDir(): void
     {
         self::assertFalse(Filesystem::isWritableRecursive($this->tmp . '/notadir'));

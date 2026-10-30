@@ -63,6 +63,14 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   written to an exclusively created temp file and renamed into place, so an existing
   symlink is replaced rather than written through. Entry names are now SHA-256 (was
   MD5) of the key, so every file-cache user sees a one-time cache miss.
+- **`Integration\Smarty\AssetUrlPlugin`** — `<{asset_url}>` returned the URL unescaped,
+  so a path holding `"` could break out of the `href`/`src` attribute it is used in. The
+  output is now HTML-escaped (`&` becomes `&amp;`); `Url::asset()` still returns the raw
+  URL. Drop any `|escape` added after `<{asset_url}>`, or the URL is escaped twice. (CWE-79)
+- **`Utility\Filesystem::isWritableRecursive()`** — directory links (and Windows
+  junctions) were followed, so a link to an ancestor recursed until the path grew too
+  long and a link graph multiplied the work. A directory link is now checked as an
+  entry and not descended into. (CWE-400)
 - **Test suite** — the bootstrap now allocates a fresh private test root per run
   instead of the fixed `sys_get_temp_dir()/xoops_test`; filesystem and language-file
   fixtures live under it, and fixture setup fails loudly.
