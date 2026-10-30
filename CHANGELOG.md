@@ -17,6 +17,37 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   members containing `:` are refused, and on POSIX a backslash stays part of the name, in
   members and in the destination alike. The check precedes extraction, so extract into a
   directory no untrusted party can change concurrently. (CWE-59)
+- **`Utility\Filesystem::unzip()`** — a small archive could expand without limit. A new
+  third parameter `$maxBytes` (default `Filesystem::UNZIP_MAX_BYTES`, 1 GiB; `null` for
+  no limit) caps the total size the members decompress to. Every member is decompressed
+  and counted before extraction, since libzip does not check a header that understates
+  the size, so a larger archive is refused before anything is written. The archive is
+  decompressed twice when a limit is set. Archives with a repeated member name are
+  refused too, since extraction opens members by name and would write the first one
+  again for each repeat. (CWE-409)
+- **`Utility\Filesystem::copyDirectory()` / `moveDirectory()`** — a destination inside
+  the source was copied into itself level after level, and a directory link pointing
+  back up the tree was followed without end. A destination that resolves to the source
+  or below it (through `..` or a link too) is now refused before anything is created,
+  and directory links are recreated as links with the same target instead of being
+  descended into (if `symlink()` fails, the copy returns `false`). A link already in
+  the destination is no longer written through: the copy returns `false`, unless it is
+  the same directory link from an earlier copy. Windows junctions count as links here
+  (PHP reports them as neither links nor directories); a junction in the source makes
+  the copy return `false`. The copy now writes to the resolved destination, so a `..`
+  after a link is followed as the check did, not applied lexically by `mkdir()`. Aliases
+  no path check sees (bind mounts, a UNC path to a local folder) are caught by device and
+  inode. The source tree's directories are collected first (a tree that contains itself
+  further down is refused), and the copy is refused when the destination or one of its
+  ancestors is a source directory (so `moveDirectory()` can no longer delete what it just
+  "copied" onto itself), when a destination directory is any source directory, and when
+  a source directory is one the copy created. An existing destination file with other
+  names (a hard link) or that is a source file (a file bind mount) is refused rather than
+  written through. The checks precede the writes, so do not copy from or into a tree an
+  untrusted party can change concurrently. `moveDirectory()` refuses a source that is, or
+  contains, a directory link, junction or dangling link, leaving it in place: a recreated
+  link would keep its old target and point into the deleted source, and deleting a linked
+  source would empty its target. (CWE-674)
 - **`Utility\Filesystem::zip()`** — the containment check folded every backslash to a
   forward slash, so on POSIX a symlink inside the source tree pointing at a sibling such
   as `src\secret.txt` compared as `src/secret.txt` and the outside file was archived.

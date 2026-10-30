@@ -33,6 +33,9 @@ use ZipArchive;
  */
 final class Filesystem
 {
+    /** Default cap on the total uncompressed size unzip() extracts (1 GiB). */
+    public const UNZIP_MAX_BYTES = 1024 ** 3;
+
     /**
      * Read a file in chunks, calling a callback for each chunk.
      *
@@ -350,14 +353,179 @@ final class Filesystem
 
     /**
      * Recursively copy a directory.
+     *
+     * Directory links are recreated as links with the same target, never descended into,
+     * so a link cycle cannot multiply the copy. A destination that resolves to the source
+     * or inside it is refused (false, nothing written), as the copy would walk its own output.
+     * A link already inside the destination is never written through (false), except a
+     * directory link identical to the one being copied, so a repeated copy succeeds.
+     *
+     * On Windows, PHP's readlink() returns a relative link's target as a resolved absolute
+     * path, so the original relative text is lost. A directory link whose target is a source
+     * directory is therefore refused (false, the entries copied before it stay in place),
+     * as its copy would point into the source; one leading outside the source is recreated
+     * as an absolute link to the same directory.
+     *
+     * The checks run before the writes they guard: do not copy from or into a tree that an
+     * untrusted party can modify concurrently. Copy a snapshot into a fresh private
+     * directory instead.
      */
     public static function copyDirectory(string $source, string $destination): bool
     {
-        if (!is_dir($source)) {
+        // Checked on the paths as given: realpath('') is the working directory.
+        if (!is_dir($source) || $destination === '') {
             return false;
         }
 
-        self::mkdir($destination);
+        $realSource = realpath($source);
+        $realDest = self::resolvePath($destination);
+
+        if ($realSource === false || $realDest === null) {
+            return false;
+        }
+
+        $separators = DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/';
+        $prefix = self::comparablePath(rtrim($realSource, $separators)) . '/';
+
+        if (str_starts_with(self::comparablePath(rtrim($realDest, $separators)) . '/', $prefix)) {
+            return false;
+        }
+
+        $sourceIds = [];
+
+        // A destination that does not exist yet holds no file that could alias a source file.
+        if (!self::collectSourceIds($realSource, $sourceIds, file_exists($realDest))) {
+            return false;
+        }
+
+        // An alias no path check sees (a bind mount, a UNC path to a local folder) is caught
+        // by identity: no existing ancestor of the destination may be a source directory.
+        $path = $realDest;
+
+        while (true) {
+            $id = file_exists($path) ? self::identity($path) : null;
+
+            if ($id !== null && isset($sourceIds[$id])) {
+                return false;
+            }
+
+            $parent = dirname($path);
+
+            if ($parent === $path) {
+                break;
+            }
+
+            $path = $parent;
+        }
+
+        // The checked paths are the ones used: mkdir() would apply a ".." in $destination
+        // lexically ("src/link/../out" makes src/out) where the check followed the link.
+        return self::copyTree($realSource, $realDest, $sourceIds);
+    }
+
+    /**
+     * True for a link, and for any entry that resolves somewhere other than where it sits
+     * in a canonical parent: a Windows junction is neither is_link() nor is_dir() to PHP.
+     */
+    private static function isLinked(string $path): bool
+    {
+        if (is_link($path)) {
+            return true;
+        }
+
+        $real = realpath($path);
+
+        return $real !== false && self::comparablePath($real) !== self::comparablePath($path);
+    }
+
+    /**
+     * "dev:ino" of a path, or null when it cannot be read or the filesystem reports inode 0
+     * (no identity to compare, so the identity guards sit out there).
+     */
+    private static function identity(string $path): ?string
+    {
+        $stat = @stat($path);
+
+        return $stat === false || $stat['ino'] === 0 ? null : $stat['dev'] . ':' . $stat['ino'];
+    }
+
+    /**
+     * Collect the identity of every directory copyTree() will read and, with $withFiles,
+     * of every file it will read (through a file link, the target it reads). Directory
+     * links and junctions are skipped as copyTree() skips them. False when a directory
+     * contains itself further down (a bind mount of an ancestor), which the copy would
+     * follow without end.
+     *
+     * @param array<string, true> $ids
+     * @param array<string, true> $ancestors
+     */
+    private static function collectSourceIds(string $directory, array &$ids, bool $withFiles, array $ancestors = []): bool
+    {
+        $id = self::identity($directory);
+
+        if ($id !== null) {
+            if (isset($ancestors[$id])) {
+                return false;
+            }
+
+            $ids[$id] = $ancestors[$id] = true;
+        }
+
+        $entries = scandir($directory);
+
+        if ($entries === false) {
+            return false;
+        }
+
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = rtrim($directory, DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/') . DIRECTORY_SEPARATOR . $entry;
+
+            if (is_dir($path)) {
+                if (!self::isLinked($path) && !self::collectSourceIds($path, $ids, $withFiles, $ancestors)) {
+                    return false;
+                }
+            } elseif ($withFiles && ($fileId = self::identity($path)) !== null) {
+                $ids[$fileId] = true;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Identities catch what paths cannot (bind mounts): a destination directory that is any
+     * source directory would overwrite the source, and a source directory that is one the
+     * copy created would walk the output.
+     *
+     * @param array<string, true> $sourceIds identities of every source directory
+     * @param array<string, true> $created   identities of every destination directory so far
+     */
+    private static function copyTree(string $source, string $destination, array $sourceIds, array &$created = []): bool
+    {
+        $separators = DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/';
+        $sourceId = self::identity($source);
+
+        if ($sourceId !== null && isset($created[$sourceId])) {
+            return false;
+        }
+
+        if (!self::mkdir($destination) || !is_dir($destination)) {
+            return false;
+        }
+
+        $destinationId = self::identity($destination);
+
+        if ($destinationId !== null) {
+            if (isset($sourceIds[$destinationId])) {
+                return false;
+            }
+
+            $created[$destinationId] = true;
+        }
 
         $entries = scandir($source);
 
@@ -370,14 +538,25 @@ final class Filesystem
                 continue;
             }
 
-            $srcPath = $source . DIRECTORY_SEPARATOR . $entry;
-            $dstPath = $destination . DIRECTORY_SEPARATOR . $entry;
+            // Trimmed so a root ("C:\", "/") does not double the separator isLinked() compares.
+            $srcPath = rtrim($source, $separators) . DIRECTORY_SEPARATOR . $entry;
+            $dstPath = rtrim($destination, $separators) . DIRECTORY_SEPARATOR . $entry;
 
-            if (is_dir($srcPath)) {
-                if (!self::copyDirectory($srcPath, $dstPath)) {
-                    return false;
-                }
-            } elseif (!@copy($srcPath, $dstPath)) {
+            if (is_link($srcPath) && is_dir($srcPath)) {
+                $copied = self::copyDirectoryLink($srcPath, $dstPath, $sourceIds);
+            } elseif (!is_link($srcPath) && self::isLinked($srcPath)) {
+                // A junction cannot be recreated portably, and following it could loop.
+                $copied = false;
+            } elseif (self::isLinked($dstPath)) {
+                // An existing link could lead back into the source or anywhere else.
+                $copied = false;
+            } elseif (is_dir($srcPath)) {
+                $copied = self::copyTree($srcPath, $dstPath, $sourceIds, $created);
+            } else {
+                $copied = self::copyFileInto($srcPath, $dstPath, $sourceIds);
+            }
+
+            if (!$copied) {
                 return false;
             }
         }
@@ -386,11 +565,121 @@ final class Filesystem
     }
 
     /**
+     * Recreate a directory link as a link with the same target.
+     *
+     * @param array<string, true> $sourceIds identities of every source directory
+     */
+    private static function copyDirectoryLink(string $srcPath, string $dstPath, array $sourceIds): bool
+    {
+        $target = readlink($srcPath);
+
+        if ($target === false) {
+            return false;
+        }
+
+        // Windows readlink() returns a relative link's resolved absolute target, so a copy
+        // of "..\sibling" would point into the source. Fails closed without an identity.
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $targetId = self::identity($target);
+
+            if ($targetId === null || isset($sourceIds[$targetId])) {
+                return false;
+            }
+        }
+
+        // An identical link from an earlier copy is kept; a symlink() listed in
+        // disable_functions throws rather than returning false.
+        return is_link($dstPath)
+            ? readlink($dstPath) === $target
+            : function_exists('symlink') && @symlink($target, $dstPath);
+    }
+
+    /**
+     * copy() writes into an existing file, keeping its owner, mode and ACL. One with other
+     * names (a hard link) or that is a source file (a file bind mount) is refused, as the
+     * write would change those too.
+     *
+     * @param array<string, true> $sourceIds
+     */
+    private static function copyFileInto(string $srcPath, string $dstPath, array $sourceIds): bool
+    {
+        $stat = is_file($dstPath) ? @stat($dstPath) : false;
+
+        if ($stat !== false && ($stat['nlink'] > 1 || isset($sourceIds[self::identity($dstPath) ?? '']))) {
+            return false;
+        }
+
+        return @copy($srcPath, $dstPath);
+    }
+
+    /**
      * Move (copy then delete) a directory.
+     *
+     * A source that is, or contains, a directory link, junction or dangling link is refused
+     * (false, nothing written): the copy recreates a directory link with its old target,
+     * which after the move would point into the deleted source or, for a relative link,
+     * somewhere else, and deleting a linked source would empty its target. A source ending
+     * in "." or ".." and a filesystem root are refused too; name the directory instead.
      */
     public static function moveDirectory(string $source, string $destination): bool
     {
-        return self::copyDirectory($source, $destination) && self::deleteDirectory($source);
+        $separators = DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/';
+        $root = rtrim($source, $separators);
+        $realSource = is_dir($source) ? realpath($source) : false;
+        $parent = realpath(dirname($root));
+
+        // A linked root (a junction too) resolves away from where it sits in its parent.
+        if (
+            $realSource === false
+            || $parent === false
+            || is_link($root)
+            || self::comparablePath($realSource) !== self::comparablePath(rtrim($parent, $separators) . DIRECTORY_SEPARATOR . basename($root))
+        ) {
+            return false;
+        }
+
+        return !self::containsDirectoryLink($realSource)
+            && self::copyDirectory($realSource, $destination)
+            && self::deleteDirectory($realSource);
+    }
+
+    /**
+     * True when the tree holds a link that is not a link to an existing file (a directory
+     * link, a junction, a dangling link), and (failing closed) when a directory cannot be
+     * read or contains itself further down. $directory must be canonical (realpath()).
+     *
+     * @param array<string, true> $ancestors
+     */
+    private static function containsDirectoryLink(string $directory, array $ancestors = []): bool
+    {
+        $id = self::identity($directory);
+
+        if ($id !== null && isset($ancestors[$id])) {
+            return true;
+        }
+
+        if ($id !== null) {
+            $ancestors[$id] = true;
+        }
+
+        $entries = scandir($directory);
+
+        if ($entries === false) {
+            return true;
+        }
+
+        foreach (array_diff($entries, ['.', '..']) as $entry) {
+            $path = rtrim($directory, DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/') . DIRECTORY_SEPARATOR . $entry;
+
+            // Not gated on is_dir(): to PHP a junction or a dangling link is no directory.
+            $linked = self::isLinked($path);
+
+            if (($linked && !is_file($path)) || (!$linked && is_dir($path) && self::containsDirectoryLink($path, $ancestors))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -483,8 +772,11 @@ final class Filesystem
      * when a member would be written through a link already in the destination. The
      * check runs before extraction: do not extract into a directory that an untrusted
      * party can modify concurrently. Extract into a fresh private directory instead.
+     *
+     * Also refused when the members decompress to more than $maxBytes in total (null: no
+     * limit), so a small archive cannot expand into a full disk.
      */
-    public static function unzip(string $zipPath, string $destination): bool
+    public static function unzip(string $zipPath, string $destination, ?int $maxBytes = self::UNZIP_MAX_BYTES): bool
     {
         if (!class_exists(ZipArchive::class)) {
             return false;
@@ -509,6 +801,8 @@ final class Filesystem
         $windows = DIRECTORY_SEPARATOR === '\\';
         $realDest = rtrim($realDest, $windows ? '/\\' : '/') . DIRECTORY_SEPARATOR;
 
+        $seen = [];
+
         // Validate each entry to prevent Zip Slip (path traversal)
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $entryName = $zip->getNameIndex($i);
@@ -521,7 +815,10 @@ final class Filesystem
             $normalized = str_replace('\\', '/', $entryName);
 
             if (
-                str_starts_with($normalized, '/')
+                // extractTo() opens members by name, so a repeated name extracts the first
+                // member again and again, past what the byte budget counted.
+                isset($seen[$entryName])
+                || str_starts_with($normalized, '/')
                 || str_contains($normalized, '../')
                 || preg_match('/^[A-Za-z]:/', $normalized)
                 // On Windows extraction drops a "C:" inside the basename too ("sub/C:x" writes sub/x).
@@ -533,12 +830,53 @@ final class Filesystem
 
                 return false;
             }
+
+            $seen[$entryName] = true;
+        }
+
+        if ($maxBytes !== null && !self::expandsWithin($zip, $maxBytes)) {
+            $zip->close();
+
+            return false;
         }
 
         $result = $zip->extractTo($realDest);
         $zip->close();
 
         return $result;
+    }
+
+    /**
+     * Decompresses every member, writing nothing, and stops once more than $maxBytes have
+     * come out. The declared sizes are not used: libzip extracts a member whose header
+     * understates its size without complaint. Costs a second decompression of the archive.
+     */
+    private static function expandsWithin(ZipArchive $zip, int $maxBytes): bool
+    {
+        $total = 0;
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $stream = $zip->getStreamIndex($i);
+
+            if ($stream === false) {
+                return false;
+            }
+
+            while (!feof($stream)) {
+                // A corrupt member warns as well as returning false; the false refuses it.
+                $chunk = @fread($stream, 65536);
+
+                if ($chunk === false || ($total += strlen($chunk)) > $maxBytes) {
+                    fclose($stream);
+
+                    return false;
+                }
+            }
+
+            fclose($stream);
+        }
+
+        return true;
     }
 
     /**
@@ -587,6 +925,49 @@ final class Filesystem
         }
 
         return true;
+    }
+
+    /**
+     * The absolute path $path would have once created: the nearest existing ancestor is
+     * resolved by realpath() and the missing rest appended, "." dropped. A ".." can climb
+     * back into existing directories, where the next name may be a link
+     * ("missing/../link/../x"), so the path after it is resolved afresh from the parent.
+     * Each such step removes a "name/.." pair, so the recursion ends. Null when no
+     * ancestor resolves.
+     */
+    private static function resolvePath(string $path): ?string
+    {
+        $separators = DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/';
+        $missing = [];
+
+        while (($real = realpath($path)) === false) {
+            $parent = dirname($path);
+
+            if ($parent === $path) {
+                return null;
+            }
+
+            $missing[] = basename($path);
+            $path = $parent;
+        }
+
+        $missing = array_reverse($missing);
+
+        foreach ($missing as $i => $part) {
+            if ($part === '..') {
+                $rest = array_slice($missing, $i + 1);
+
+                return self::resolvePath(
+                    $rest === [] ? dirname($real) : rtrim(dirname($real), $separators) . DIRECTORY_SEPARATOR . implode(DIRECTORY_SEPARATOR, $rest),
+                );
+            }
+
+            if ($part !== '.' && $part !== '') {
+                $real = rtrim($real, $separators) . DIRECTORY_SEPARATOR . $part;
+            }
+        }
+
+        return $real;
     }
 
     /**
