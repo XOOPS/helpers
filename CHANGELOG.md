@@ -8,6 +8,23 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Security
 
+- **`Utility\Filesystem::deleteDirectory()`** — a linked root (symlink or junction) was
+  followed, so `deleteDirectory('/x/link')` emptied the link's target. It now returns
+  `false` for a linked root, as `moveDirectory()` already did, and for a path ending in
+  `.` or `..` or a filesystem root. The root check also covers `moveDirectory()`, which
+  accepted `/` (or `C:\`) while the working directory was that root, and both now return
+  `false` instead of throwing `ValueError` on a path with a NUL byte. (CWE-59)
+- **`Utility\Filesystem::deleteDirectory()`, `delete()`** — a Windows junction or
+  directory symlink was not removed: `deleteDirectory()` returned `false` on a tree
+  holding one, and `delete()` could not remove one (for a junction whose target is gone it
+  even returned `true` and left it). Both now remove the link itself, dangling or not, and
+  leave its target alone; `delete()` refuses a path ending in `.` or `..`, which names a
+  real directory.
+- **`Utility\Filesystem::deleteDirectory()`** — documented that its no-follow check on
+  links inside the tree precedes each delete, so a tree an untrusted party can change
+  concurrently must not be deleted with it: a directory replaced by a link in between is
+  deleted through. PHP offers no descriptor-relative delete that would close the window.
+  (CWE-367)
 - **`Utility\Filesystem::unzip()`** — member names were checked, but not what already sat
   in the destination: a directory link (`sub` → `/etc`) carried `sub/passwd` outside it,
   and a dangling file link created its target. Every existing component of each output

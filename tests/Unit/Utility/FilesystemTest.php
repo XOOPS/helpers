@@ -148,6 +148,132 @@ final class FilesystemTest extends TestCase
         self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/nonexistent'));
     }
 
+    public function testDeleteDirectoryRefusesALinkedRoot(): void
+    {
+        // Deleting through the link would empty its target.
+        mkdir($this->tmp . '/target', 0700);
+        file_put_contents($this->tmp . '/target/a.txt', 'AAA');
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $this->junctionOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        } else {
+            $this->symlinkOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        }
+
+        self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/link'));
+        self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/link/'));
+        self::assertSame(realpath($this->tmp . '/target'), realpath($this->tmp . '/link'));
+        self::assertSame('AAA', file_get_contents($this->tmp . '/target/a.txt'));
+    }
+
+    public function testDeleteDirectoryRefusesADotRoot(): void
+    {
+        mkdir($this->tmp . '/tree/sub', 0700, true);
+        file_put_contents($this->tmp . '/tree/a.txt', 'AAA');
+
+        self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/tree/sub/..'));
+        self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/tree/.'));
+        self::assertSame('AAA', file_get_contents($this->tmp . '/tree/a.txt'));
+    }
+
+    public function testDirectoryOperationsRefuseAFilesystemRootFromThatRoot(): void
+    {
+        // "/" trims to "", which resolves against the working directory: from the root
+        // itself the parent comparison held. Probe the shared guard rather than risk
+        // deleteDirectory("/") on a regression.
+        $guard = new \ReflectionMethod(Filesystem::class, 'unlinkedRealDirectory');
+        $fsRoot = DIRECTORY_SEPARATOR === '\\' ? substr((string) realpath($this->tmp), 0, 3) : '/';
+        $cwd = (string) getcwd();
+        chdir($fsRoot);
+
+        try {
+            foreach (['/', '\\', $fsRoot, '.'] as $root) {
+                self::assertFalse($guard->invoke(null, $root), var_export($root, true));
+            }
+        } finally {
+            chdir($cwd);
+        }
+    }
+
+    public function testDirectoryOperationsReturnFalseOnANulByte(): void
+    {
+        self::assertFalse(Filesystem::deleteDirectory($this->tmp . "/a\0/b"));
+        self::assertFalse(Filesystem::moveDirectory($this->tmp . "/a\0/b", $this->tmp . '/moved'));
+    }
+
+    public function testDeleteDirectoryRemovesADirectoryLinkWithoutItsTarget(): void
+    {
+        mkdir($this->tmp . '/target', 0700);
+        file_put_contents($this->tmp . '/target/keep.txt', 'KEEP');
+        mkdir($this->tmp . '/tree', 0700);
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $this->junctionOrSkip($this->tmp . '/target', $this->tmp . '/tree/link');
+        } else {
+            $this->symlinkOrSkip($this->tmp . '/target', $this->tmp . '/tree/link');
+        }
+
+        self::assertTrue(Filesystem::deleteDirectory($this->tmp . '/tree'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/tree');
+        self::assertSame('KEEP', file_get_contents($this->tmp . '/target/keep.txt'));
+    }
+
+    public function testDeleteRemovesADirectoryLinkWithoutItsTarget(): void
+    {
+        mkdir($this->tmp . '/target', 0700);
+        file_put_contents($this->tmp . '/target/keep.txt', 'KEEP');
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $this->junctionOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        } else {
+            $this->symlinkOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        }
+
+        self::assertTrue(Filesystem::delete($this->tmp . '/link'));
+        self::assertFalse(file_exists($this->tmp . '/link') || is_link($this->tmp . '/link'));
+        self::assertSame('KEEP', file_get_contents($this->tmp . '/target/keep.txt'));
+    }
+
+    public function testDeleteDirectoryRemovesADanglingJunction(): void
+    {
+        // A junction whose target is gone is neither is_dir() nor realpath()-resolvable.
+        mkdir($this->tmp . '/target', 0700);
+        mkdir($this->tmp . '/tree', 0700);
+        $this->junctionOrSkip($this->tmp . '/target', $this->tmp . '/tree/link');
+        rmdir($this->tmp . '/target');
+
+        self::assertTrue(Filesystem::deleteDirectory($this->tmp . '/tree'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/tree');
+    }
+
+    public function testDeleteRemovesADanglingJunction(): void
+    {
+        mkdir($this->tmp . '/target', 0700);
+        $this->junctionOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        rmdir($this->tmp . '/target');
+
+        self::assertTrue(Filesystem::delete($this->tmp . '/link'));
+        self::assertNotContains('link', scandir($this->tmp));
+    }
+
+    public function testDeleteTakesARelativePath(): void
+    {
+        file_put_contents($this->tmp . '/rel.txt', 'x');
+        mkdir($this->tmp . '/reldir', 0700);
+        $cwd = (string) getcwd();
+        chdir($this->tmp);
+
+        try {
+            self::assertTrue(Filesystem::delete('rel.txt'));
+            self::assertFalse(Filesystem::delete('reldir'));
+        } finally {
+            chdir($cwd);
+        }
+
+        self::assertFileDoesNotExist($this->tmp . '/rel.txt');
+        self::assertDirectoryExists($this->tmp . '/reldir');
+    }
+
     public function testCopyDirectoryCopiesAllFiles(): void
     {
         $src = $this->tmp . '/source';
@@ -1110,6 +1236,16 @@ final class FilesystemTest extends TestCase
 
         self::assertFalse(Filesystem::delete($dir));
         self::assertDirectoryExists($dir);
+    }
+
+    public function testDeleteRefusesADotEndingPathToARealDirectory(): void
+    {
+        mkdir($this->tmp . '/realdir/sub', 0700, true);
+
+        // realpath() drops the dot entry, which made Windows rmdir() the empty directory.
+        self::assertFalse(Filesystem::delete($this->tmp . '/realdir/sub/.'));
+        self::assertFalse(Filesystem::delete($this->tmp . '/realdir/sub/..'));
+        self::assertDirectoryExists($this->tmp . '/realdir/sub');
     }
 
     // ── H2: single-file move ────────────────────────────────
