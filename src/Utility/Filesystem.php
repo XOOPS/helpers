@@ -257,7 +257,8 @@ final class Filesystem
      */
     public static function delete(string $path): bool
     {
-        if (!file_exists($path) && !is_link($path)) {
+        // lstat(), unlike file_exists() and is_link(), also sees a junction whose target is gone.
+        if (@lstat($path) === false) {
             return true;
         }
 
@@ -272,11 +273,10 @@ final class Filesystem
         $parent = realpath(dirname($path));
         $entry = $parent === false ? false : rtrim($parent, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . basename($path);
 
-        if ($entry !== false && self::isLinked($entry)) {
-            return self::removeLink($entry);
-        }
-
-        return !is_dir($path) && @unlink($path);
+        // Not a directory: a file, or a dangling junction that only removeLink()'s rmdir() removes.
+        return $entry !== false && self::isLinked($entry)
+            ? self::removeLink($entry)
+            : !is_dir($path) && self::removeLink($path);
     }
 
     /**
@@ -380,7 +380,8 @@ final class Filesystem
             $removed = match (true) {
                 self::isLinked($path) => self::removeLink($path),
                 is_dir($path) => self::deleteTree($path),
-                default => @unlink($path),
+                // A dangling junction is neither isLinked() nor is_dir(); only rmdir() removes it.
+                default => self::removeLink($path),
             };
 
             if (!$removed) {

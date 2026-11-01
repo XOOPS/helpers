@@ -234,6 +234,28 @@ final class FilesystemTest extends TestCase
         self::assertSame('KEEP', file_get_contents($this->tmp . '/target/keep.txt'));
     }
 
+    public function testDeleteDirectoryRemovesADanglingJunction(): void
+    {
+        // A junction whose target is gone is neither is_dir() nor realpath()-resolvable.
+        mkdir($this->tmp . '/target', 0700);
+        mkdir($this->tmp . '/tree', 0700);
+        $this->junctionOrSkip($this->tmp . '/target', $this->tmp . '/tree/link');
+        rmdir($this->tmp . '/target');
+
+        self::assertTrue(Filesystem::deleteDirectory($this->tmp . '/tree'));
+        self::assertDirectoryDoesNotExist($this->tmp . '/tree');
+    }
+
+    public function testDeleteRemovesADanglingJunction(): void
+    {
+        mkdir($this->tmp . '/target', 0700);
+        $this->junctionOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        rmdir($this->tmp . '/target');
+
+        self::assertTrue(Filesystem::delete($this->tmp . '/link'));
+        self::assertNotContains('link', scandir($this->tmp));
+    }
+
     public function testDeleteTakesARelativePath(): void
     {
         file_put_contents($this->tmp . '/rel.txt', 'x');
