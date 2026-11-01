@@ -170,14 +170,27 @@ final class Filesystem
 
     /**
      * Check if a directory and all its contents are writable.
+     *
+     * Directory links and junctions are checked as entries; their targets are not.
+     * Takes a local path: a stream URL (file://) returns false, as in copyDirectory().
      */
     public static function isWritableRecursive(string $directory): bool
     {
-        if (!is_dir($directory) || !is_writable($directory)) {
+        // is_dir() first: it is false for '' (which realpath() turns into the working
+        // directory) and for a NUL byte (on which realpath() throws).
+        if (!is_dir($directory)) {
             return false;
         }
 
-        $entries = scandir($directory);
+        // Canonical, so isLinked() tells a link from a relative or linked-parent path.
+        $real = realpath($directory);
+
+        if ($real === false || !is_writable($real)) {
+            return false;
+        }
+
+        $directory = rtrim($real, DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/');
+        $entries = scandir($real);
 
         if ($entries === false) {
             return false;
@@ -190,7 +203,9 @@ final class Filesystem
 
             $path = $directory . DIRECTORY_SEPARATOR . $entry;
 
-            if (is_dir($path)) {
+            // A directory link is checked as an entry, not followed: a link to an
+            // ancestor would recurse until the path grows too long.
+            if (is_dir($path) && !self::isLinked($path)) {
                 if (!self::isWritableRecursive($path)) {
                     return false;
                 }

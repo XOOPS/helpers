@@ -56,6 +56,13 @@ final class AssetUrlPluginTest extends TestCase
         self::assertStringContainsString('http://localhost', $result);
     }
 
+    public function testRenderEscapesTheUrlForAnHtmlAttribute(): void
+    {
+        $result = AssetUrlPlugin::render(['path' => 'x.js"><script>alert(1)</script>&v=1'], $this->smarty);
+
+        self::assertSame('http://localhost/x.js&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&amp;v=1', $result);
+    }
+
     public function testRenderWithMissingPathUsesEmptyString(): void
     {
         $result = AssetUrlPlugin::render([], $this->smarty);
