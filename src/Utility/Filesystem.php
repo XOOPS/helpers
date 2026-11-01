@@ -329,6 +329,11 @@ final class Filesystem
 
     /**
      * Recursively delete a directory and all its contents.
+     *
+     * Links are removed, never followed. That check runs on each path before the delete
+     * it guards, and PHP has no descriptor-relative unlink: a directory swapped for a link
+     * in between is deleted through. Do not delete a tree that an untrusted party can
+     * modify concurrently.
      */
     public static function deleteDirectory(string $directory): bool
     {
