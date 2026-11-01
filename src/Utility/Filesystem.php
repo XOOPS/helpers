@@ -172,6 +172,7 @@ final class Filesystem
      * Check if a directory and all its contents are writable.
      *
      * Directory links and junctions are checked as entries; their targets are not.
+     * Takes a local path: a stream URL (file://) returns false, as in copyDirectory().
      */
     public static function isWritableRecursive(string $directory): bool
     {

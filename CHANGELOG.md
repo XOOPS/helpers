@@ -70,7 +70,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - **`Utility\Filesystem::isWritableRecursive()`** — directory links (and Windows
   junctions) were followed, so a link to an ancestor recursed until the path grew too
   long and a link graph multiplied the work. A directory link is now checked as an
-  entry and not descended into. (CWE-400)
+  entry and not descended into. The path is resolved first, so like `copyDirectory()`
+  it takes local paths only: a `file://` URL now returns `false`. (CWE-400)
 - **Test suite** — the bootstrap now allocates a fresh private test root per run
   instead of the fixed `sys_get_temp_dir()/xoops_test`; filesystem and language-file
   fixtures live under it, and fixture setup fails loudly.
