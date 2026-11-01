@@ -596,6 +596,11 @@ final class FilesystemTest extends TestCase
         self::assertTrue(Filesystem::isWritableRecursive($dir));
     }
 
+    public function testIsWritableRecursiveReturnsFalseForANulByte(): void
+    {
+        self::assertFalse(Filesystem::isWritableRecursive($this->tmp . "\0"));
+    }
+
     public function testIsWritableRecursiveReturnsFalseForNonDir(): void
     {
         self::assertFalse(Filesystem::isWritableRecursive($this->tmp . '/notadir'));
