@@ -944,7 +944,8 @@ final class Filesystem
      * A clean member name can still leave the destination through what already sits in
      * it: "sub" -> /etc carries "sub/passwd" outside, and a dangling "file.txt" link
      * creates its target. Each existing component of the output path must be a non-link
-     * that resolves under $realDest (which ends in a separator); the first missing one
+     * that resolves under $realDest (which ends in a separator), and an existing file must
+     * have no other name (hard link); the first missing one
      * ends the walk, as extraction creates the rest as plain directories and files.
      */
     private static function isContainedOutputPath(string $realDest, string $member): bool
@@ -981,6 +982,14 @@ final class Filesystem
             $real = realpath($path);
 
             if ($real === false || !str_starts_with(self::comparablePath($real) . '/', $prefix)) {
+                return false;
+            }
+
+            // Extraction rewrites an existing file in place: one with other names (a hard
+            // link, possibly from outside) would change under those names too.
+            $stat = is_file($path) ? @stat($path) : false;
+
+            if ($stat !== false && $stat['nlink'] > 1) {
                 return false;
             }
         }

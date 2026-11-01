@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Security
 
+- **`Utility\Filesystem::unzip()`** — a member overwriting an existing file in the
+  destination wrote through it in place, so a hard link to a file outside the destination
+  changed that file too. An existing output file with more than one name now refuses the
+  whole archive (`false`, nothing written), as `copyDirectory()` already did. (CWE-59)
 - **`Utility\Filesystem::deleteDirectory()`** — a linked root (symlink or junction) was
   followed, so `deleteDirectory('/x/link')` emptied the link's target. It now returns
   `false` for a linked root, as `moveDirectory()` already did, and for a path ending in

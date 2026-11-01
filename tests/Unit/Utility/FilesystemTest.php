@@ -945,6 +945,22 @@ final class FilesystemTest extends TestCase
         self::assertFileDoesNotExist($target);
     }
 
+    public function testUnzipRefusesToWriteThroughAHardLinkInTheDestination(): void
+    {
+        // Extraction rewrites an existing file in place, so every other name for it changes too.
+        $outside = $this->tmp . '/outside.txt';
+        file_put_contents($outside, 'old');
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+
+        if (!function_exists('link') || !@link($outside, $dst . '/file.txt')) {
+            self::markTestSkipped('hard links not supported in this environment');
+        }
+
+        self::assertFalse(Filesystem::unzip($this->buildZip(['file.txt' => 'payload']), $dst));
+        self::assertSame('old', file_get_contents($outside));
+    }
+
     public function testUnzipWalksAnInnerDotComponentAsTheSamePath(): void
     {
         // ext/zip writes "a/./file.txt" as "a/file.txt", so the link there is found.
