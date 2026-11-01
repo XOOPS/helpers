@@ -11,7 +11,13 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - **`Utility\Filesystem::deleteDirectory()`** — a linked root (symlink or junction) was
   followed, so `deleteDirectory('/x/link')` emptied the link's target. It now returns
   `false` for a linked root, as `moveDirectory()` already did, and for a path ending in
-  `.` or `..` or a filesystem root; `delete()` removes a link itself. (CWE-59)
+  `.` or `..` or a filesystem root. The root check also covers `moveDirectory()`, which
+  accepted `/` (or `C:\`) while the working directory was that root, and both now return
+  `false` instead of throwing `ValueError` on a path with a NUL byte. (CWE-59)
+- **`Utility\Filesystem::deleteDirectory()`, `delete()`** — a Windows junction or
+  directory symlink was not removed: `deleteDirectory()` returned `false` on a tree
+  holding one, and `delete()` could not remove one. Both now remove the link itself and
+  leave its target alone.
 - **`Utility\Filesystem::deleteDirectory()`** — documented that its no-follow check on
   links inside the tree precedes each delete, so a tree an untrusted party can change
   concurrently must not be deleted with it: a directory replaced by a link in between is

@@ -250,7 +250,8 @@ final class Filesystem
     }
 
     /**
-     * Delete a single file or symlink (H2). Returns true if already absent.
+     * Delete a single file, symlink or junction (H2), never a link's target. Returns true
+     * if already absent.
      *
      * Refuses real directories — use deleteDirectory() for those.
      */
@@ -260,11 +261,25 @@ final class Filesystem
             return true;
         }
 
-        if (is_dir($path) && !is_link($path)) {
-            return false;
+        // isLinked() compares against realpath(), so it needs a canonical path: resolve the
+        // parent, keep the entry itself unresolved.
+        $parent = realpath(dirname($path));
+        $entry = $parent === false ? false : rtrim($parent, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . basename($path);
+
+        if ($entry !== false && self::isLinked($entry)) {
+            return self::removeLink($entry);
         }
 
-        return @unlink($path);
+        return !is_dir($path) && @unlink($path);
+    }
+
+    /**
+     * Remove a link itself. Windows removes a directory symlink or a junction with rmdir(),
+     * which, unlike on a real directory, leaves the target alone.
+     */
+    private static function removeLink(string $path): bool
+    {
+        return @unlink($path) || @rmdir($path);
     }
 
     /**
@@ -359,9 +374,9 @@ final class Filesystem
 
             $path = $directory . DIRECTORY_SEPARATOR . $entry;
 
-            // Remove symlinks as files — never follow into external trees
-            if (is_link($path)) {
-                if (!@unlink($path)) {
+            // Remove links (junctions too) themselves — never follow into external trees
+            if (self::isLinked($path)) {
+                if (!self::removeLink($path)) {
                     return false;
                 }
             } elseif (is_dir($path)) {
@@ -662,15 +677,23 @@ final class Filesystem
      */
     private static function unlinkedRealDirectory(string $directory): string|false
     {
+        // Before any realpath(): is_dir() returns false on a NUL byte, realpath() throws.
+        if (!is_dir($directory)) {
+            return false;
+        }
+
         $separators = DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/';
         $root = rtrim($directory, $separators);
-        $real = is_dir($directory) ? realpath($directory) : false;
+        $real = realpath($directory);
         $parent = realpath(dirname($root));
 
-        // A linked root (a junction too) resolves away from where it sits in its parent.
+        // A filesystem root is its own parent ("/" and "C:\" trim to a path that the
+        // comparison below would accept). A linked root (a junction too) resolves away
+        // from where it sits in its parent.
         if (
             $real === false
             || $parent === false
+            || dirname($real) === $real
             || is_link($root)
             || self::comparablePath($real) !== self::comparablePath(rtrim($parent, $separators) . DIRECTORY_SEPARATOR . basename($root))
         ) {
