@@ -830,9 +830,12 @@ final class Filesystem
      * Extract a zip archive to a directory.
      *
      * Refused (false, nothing written) when a member name escapes the destination or
-     * when a member would be written through a link already in the destination. The
-     * check runs before extraction: do not extract into a directory that an untrusted
-     * party can modify concurrently. Extract into a fresh private directory instead.
+     * when a member would be written through a link already in the destination, or into
+     * an existing file that has other names (hard link) or is not a plain file (FIFO,
+     * device). The check runs before extraction: do not extract into a directory that an
+     * untrusted party can modify concurrently (a link or hard link made in between is
+     * written through), and a mount point inside it is not detected. Extract into a fresh
+     * private directory instead.
      *
      * Also refused when the members decompress to more than $maxBytes in total (null: no
      * limit), so a small archive cannot expand into a full disk.
@@ -863,6 +866,9 @@ final class Filesystem
         $realDest = rtrim($realDest, $windows ? '/\\' : '/') . DIRECTORY_SEPARATOR;
 
         $seen = [];
+
+        // link() leaves stat()'s cached link count stale; the checks below need fresh ones.
+        clearstatcache();
 
         // Validate each entry to prevent Zip Slip (path traversal)
         for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -945,7 +951,7 @@ final class Filesystem
      * it: "sub" -> /etc carries "sub/passwd" outside, and a dangling "file.txt" link
      * creates its target. Each existing component of the output path must be a non-link
      * that resolves under $realDest (which ends in a separator), and an existing file must
-     * have no other name (hard link); the first missing one
+     * be a plain file with no other name (hard link); the first missing one
      * ends the walk, as extraction creates the rest as plain directories and files.
      */
     private static function isContainedOutputPath(string $realDest, string $member): bool
@@ -985,16 +991,24 @@ final class Filesystem
                 return false;
             }
 
-            // Extraction rewrites an existing file in place: one with other names (a hard
-            // link, possibly from outside) would change under those names too.
-            $stat = is_file($path) ? @stat($path) : false;
-
-            if ($stat !== false && $stat['nlink'] > 1) {
+            if (!is_dir($path) && !self::isSoleNameOfARegularFile($path)) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /**
+     * Extraction opens an existing entry read-write and writes into it: a file with other
+     * names (a hard link, possibly from outside) changes under those names too, and a FIFO
+     * or device passes the bytes elsewhere. Only a plain file with one name is overwritten.
+     */
+    private static function isSoleNameOfARegularFile(string $path): bool
+    {
+        $stat = @lstat($path);
+
+        return $stat !== false && ($stat['mode'] & 0170000) === 0100000 && $stat['nlink'] === 1;
     }
 
     /**

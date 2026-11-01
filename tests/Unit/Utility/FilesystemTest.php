@@ -961,6 +961,21 @@ final class FilesystemTest extends TestCase
         self::assertSame('old', file_get_contents($outside));
     }
 
+    public function testUnzipRefusesToWriteIntoAFifoInTheDestination(): void
+    {
+        // Extraction opens an existing entry for writing: a FIFO passes the bytes to its reader.
+        if (!function_exists('posix_mkfifo')) {
+            self::markTestSkipped('posix_mkfifo() not available');
+        }
+
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        self::assertTrue(posix_mkfifo($dst . '/file.txt', 0600));
+
+        // Refused before extraction opens it, so the test cannot block on the FIFO.
+        self::assertFalse(Filesystem::unzip($this->buildZip(['file.txt' => 'payload']), $dst));
+    }
+
     public function testUnzipWalksAnInnerDotComponentAsTheSamePath(): void
     {
         // ext/zip writes "a/./file.txt" as "a/file.txt", so the link there is found.
@@ -1124,7 +1139,8 @@ final class FilesystemTest extends TestCase
         $dst = $this->tmp . '/dest';
         mkdir($dst . '/sub', 0700, true);
         file_put_contents($dst . '/sub/old.txt', 'old');
-        $zipPath = $this->buildZip(['sub/old.txt' => 'new', 'sub/deeper/more.txt' => 'more']);
+        // A directory entry for an existing directory, and an existing plain file overwritten.
+        $zipPath = $this->buildZip(['sub/' => '', 'sub/old.txt' => 'new', 'sub/deeper/more.txt' => 'more']);
 
         self::assertTrue(Filesystem::unzip($zipPath, $dst));
         self::assertSame('new', file_get_contents($dst . '/sub/old.txt'));
