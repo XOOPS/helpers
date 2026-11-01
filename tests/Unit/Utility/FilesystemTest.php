@@ -148,6 +148,34 @@ final class FilesystemTest extends TestCase
         self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/nonexistent'));
     }
 
+    public function testDeleteDirectoryRefusesALinkedRoot(): void
+    {
+        // Deleting through the link would empty its target.
+        mkdir($this->tmp . '/target', 0700);
+        file_put_contents($this->tmp . '/target/a.txt', 'AAA');
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $this->junctionOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        } else {
+            $this->symlinkOrSkip($this->tmp . '/target', $this->tmp . '/link');
+        }
+
+        self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/link'));
+        self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/link/'));
+        self::assertSame(realpath($this->tmp . '/target'), realpath($this->tmp . '/link'));
+        self::assertSame('AAA', file_get_contents($this->tmp . '/target/a.txt'));
+    }
+
+    public function testDeleteDirectoryRefusesADotRoot(): void
+    {
+        mkdir($this->tmp . '/tree/sub', 0700, true);
+        file_put_contents($this->tmp . '/tree/a.txt', 'AAA');
+
+        self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/tree/sub/..'));
+        self::assertFalse(Filesystem::deleteDirectory($this->tmp . '/tree/.'));
+        self::assertSame('AAA', file_get_contents($this->tmp . '/tree/a.txt'));
+    }
+
     public function testCopyDirectoryCopiesAllFiles(): void
     {
         $src = $this->tmp . '/source';

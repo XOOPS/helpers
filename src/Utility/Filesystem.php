@@ -330,17 +330,22 @@ final class Filesystem
     /**
      * Recursively delete a directory and all its contents.
      *
-     * Links are removed, never followed. That check runs on each path before the delete
-     * it guards, and PHP has no descriptor-relative unlink: a directory swapped for a link
-     * in between is deleted through. Do not delete a tree that an untrusted party can
-     * modify concurrently.
+     * A linked root (symlink or junction), a path ending in "." or ".." and a filesystem
+     * root are refused (false, nothing deleted): deleting through a linked root would empty
+     * its target. Use delete() to remove a link itself. Links inside the tree are removed,
+     * never followed. That check runs on each path before the delete it guards, and PHP has
+     * no descriptor-relative unlink: a directory swapped for a link in between is deleted
+     * through. Do not delete a tree that an untrusted party can modify concurrently.
      */
     public static function deleteDirectory(string $directory): bool
     {
-        if (!is_dir($directory)) {
-            return false;
-        }
+        $real = self::unlinkedRealDirectory($directory);
 
+        return $real !== false && self::deleteTree($real);
+    }
+
+    private static function deleteTree(string $directory): bool
+    {
         $entries = scandir($directory);
 
         if ($entries === false) {
@@ -360,7 +365,7 @@ final class Filesystem
                     return false;
                 }
             } elseif (is_dir($path)) {
-                if (!self::deleteDirectory($path)) {
+                if (!self::deleteTree($path)) {
                     return false;
                 }
             } elseif (!@unlink($path)) {
@@ -643,24 +648,36 @@ final class Filesystem
      */
     public static function moveDirectory(string $source, string $destination): bool
     {
+        $realSource = self::unlinkedRealDirectory($source);
+
+        return $realSource !== false
+            && !self::containsDirectoryLink($realSource)
+            && self::copyDirectory($realSource, $destination)
+            && self::deleteTree($realSource);
+    }
+
+    /**
+     * Canonical path of $directory, or false unless it is a real directory named by its own
+     * entry: not a link or junction, not "." or "..", not a filesystem root.
+     */
+    private static function unlinkedRealDirectory(string $directory): string|false
+    {
         $separators = DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/';
-        $root = rtrim($source, $separators);
-        $realSource = is_dir($source) ? realpath($source) : false;
+        $root = rtrim($directory, $separators);
+        $real = is_dir($directory) ? realpath($directory) : false;
         $parent = realpath(dirname($root));
 
         // A linked root (a junction too) resolves away from where it sits in its parent.
         if (
-            $realSource === false
+            $real === false
             || $parent === false
             || is_link($root)
-            || self::comparablePath($realSource) !== self::comparablePath(rtrim($parent, $separators) . DIRECTORY_SEPARATOR . basename($root))
+            || self::comparablePath($real) !== self::comparablePath(rtrim($parent, $separators) . DIRECTORY_SEPARATOR . basename($root))
         ) {
             return false;
         }
 
-        return !self::containsDirectoryLink($realSource)
-            && self::copyDirectory($realSource, $destination)
-            && self::deleteDirectory($realSource);
+        return $real;
     }
 
     /**
