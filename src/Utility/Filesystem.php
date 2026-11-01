@@ -261,6 +261,12 @@ final class Filesystem
             return true;
         }
 
+        // "dir/." and "dir/.." name a directory, but realpath() drops the dot entry, so
+        // isLinked() would take the directory for a link and removeLink() would rmdir() it.
+        if (\in_array(basename($path), ['.', '..'], true)) {
+            return false;
+        }
+
         // isLinked() compares against realpath(), so it needs a canonical path: resolve the
         // parent, keep the entry itself unresolved.
         $parent = realpath(dirname($path));
@@ -367,23 +373,17 @@ final class Filesystem
             return false;
         }
 
-        foreach ($entries as $entry) {
-            if ($entry === '.' || $entry === '..') {
-                continue;
-            }
-
+        foreach (array_diff($entries, ['.', '..']) as $entry) {
             $path = $directory . DIRECTORY_SEPARATOR . $entry;
 
             // Remove links (junctions too) themselves — never follow into external trees
-            if (self::isLinked($path)) {
-                if (!self::removeLink($path)) {
-                    return false;
-                }
-            } elseif (is_dir($path)) {
-                if (!self::deleteTree($path)) {
-                    return false;
-                }
-            } elseif (!@unlink($path)) {
+            $removed = match (true) {
+                self::isLinked($path) => self::removeLink($path),
+                is_dir($path) => self::deleteTree($path),
+                default => @unlink($path),
+            };
+
+            if (!$removed) {
                 return false;
             }
         }

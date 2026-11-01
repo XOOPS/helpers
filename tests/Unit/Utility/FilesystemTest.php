@@ -1216,6 +1216,16 @@ final class FilesystemTest extends TestCase
         self::assertDirectoryExists($dir);
     }
 
+    public function testDeleteRefusesADotEndingPathToARealDirectory(): void
+    {
+        mkdir($this->tmp . '/realdir/sub', 0700, true);
+
+        // realpath() drops the dot entry, which made Windows rmdir() the empty directory.
+        self::assertFalse(Filesystem::delete($this->tmp . '/realdir/sub/.'));
+        self::assertFalse(Filesystem::delete($this->tmp . '/realdir/sub/..'));
+        self::assertDirectoryExists($this->tmp . '/realdir/sub');
+    }
+
     // ── H2: single-file move ────────────────────────────────
 
     public function testMoveRelocatesFileAndCreatesDestDir(): void

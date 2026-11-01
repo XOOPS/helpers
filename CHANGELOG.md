@@ -17,7 +17,8 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - **`Utility\Filesystem::deleteDirectory()`, `delete()`** — a Windows junction or
   directory symlink was not removed: `deleteDirectory()` returned `false` on a tree
   holding one, and `delete()` could not remove one. Both now remove the link itself and
-  leave its target alone.
+  leave its target alone; `delete()` refuses a path ending in `.` or `..`, which names a
+  real directory.
 - **`Utility\Filesystem::deleteDirectory()`** — documented that its no-follow check on
   links inside the tree precedes each delete, so a tree an untrusted party can change
   concurrently must not be deleted with it: a directory replaced by a link in between is
