@@ -954,9 +954,12 @@ final class FilesystemTest extends TestCase
         mkdir($dst, 0700);
         $this->junctionOrSkip($outside, $dst . '/sub');
         rmdir($outside);
+        $zipPath = $this->buildZip(['first.txt' => 'valid', 'sub/planted.txt' => 'payload']);
 
-        self::assertFalse(Filesystem::unzip($this->buildZip(['sub/planted.txt' => 'payload']), $dst));
+        // Refused in preflight: the valid member before the junction is not written either.
+        self::assertFalse(Filesystem::unzip($zipPath, $dst));
         self::assertFileDoesNotExist($outside . '/planted.txt');
+        self::assertFileDoesNotExist($dst . '/first.txt');
     }
 
     public function testUnzipRefusesToWriteThroughAHardLinkInTheDestination(): void
