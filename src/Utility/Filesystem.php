@@ -959,15 +959,9 @@ final class Filesystem
         $prefix = self::comparablePath($realDest);
         $path = substr($realDest, 0, -1);
         $parts = explode('/', $member);
-        $last = count($parts) - 1;
 
-        // ext/zip drops everything up to a directory named "<x>." ("a./b/c" is written
-        // as "b/c"), so the walk would check a path that is never written. Checked for every
-        // directory up front: the walk below stops at the first one that does not exist.
-        foreach ($parts as $i => $part) {
-            if ($i < $last && $part !== '.' && str_ends_with($part, '.')) {
-                return false;
-            }
+        if (self::hasDotEndingDirectory($parts)) {
+            return false;
         }
 
         foreach ($parts as $part) {
@@ -997,6 +991,24 @@ final class Filesystem
         }
 
         return true;
+    }
+
+    /**
+     * ext/zip drops everything up to a directory named "<x>." ("a./b/c" is written as
+     * "b/c"), so the containment walk would check a path that is never written. Checked
+     * for every directory up front: the walk stops at the first one that does not exist.
+     *
+     * @param list<string> $parts
+     */
+    private static function hasDotEndingDirectory(array $parts): bool
+    {
+        foreach (array_slice($parts, 0, -1) as $part) {
+            if ($part !== '.' && str_ends_with($part, '.')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

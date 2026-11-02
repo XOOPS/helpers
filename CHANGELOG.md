@@ -11,7 +11,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - **`Utility\Filesystem::unzip()`** — a member overwriting an existing file in the
   destination wrote through it in place, so a hard link to a file outside the destination
   changed that file too, and an existing FIFO passed the member's bytes to its reader. An
-  existing output entry that is not a plain file with exactly one name now refuses the
+  existing non-directory output entry that is not a plain file with exactly one name now refuses the
   whole archive (`false`, nothing written), as `copyDirectory()` already did for hard
   links. (CWE-59)
 - **`Utility\Filesystem::deleteDirectory()`** — a linked root (symlink or junction) was

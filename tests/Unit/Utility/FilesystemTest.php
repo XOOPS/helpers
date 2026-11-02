@@ -961,6 +961,25 @@ final class FilesystemTest extends TestCase
         self::assertSame('old', file_get_contents($outside));
     }
 
+    public function testUnzipRefusesAHardLinkMadeAfterTheFileWasLastStatted(): void
+    {
+        // PHP caches the last lstat(); a link made after it must still be seen.
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        file_put_contents($dst . '/file.txt', 'old');
+        $zipPath = $this->buildZip(['file.txt' => 'payload']);
+        self::assertSame(1, lstat($dst . '/file.txt')['nlink']);
+
+        $outside = $this->tmp . '/outside.txt';
+
+        if (!function_exists('link') || !@link($dst . '/file.txt', $outside)) {
+            self::markTestSkipped('hard links not supported in this environment');
+        }
+
+        self::assertFalse(Filesystem::unzip($zipPath, $dst));
+        self::assertSame('old', file_get_contents($outside));
+    }
+
     public function testUnzipRefusesToWriteIntoAFifoInTheDestination(): void
     {
         // Extraction opens an existing entry for writing: a FIFO passes the bytes to its reader.
