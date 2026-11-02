@@ -880,11 +880,13 @@ final class Filesystem
 
             // Reject entries with traversal sequences or absolute paths before any filesystem operation
             $normalized = str_replace('\\', '/', $entryName);
+            // On Windows "a/b", "a\b" and "A/B" are one output file; the later member would replace the earlier.
+            $seenKey = $windows ? self::comparablePath($normalized) : $entryName;
 
             if (
                 // extractTo() opens members by name, so a repeated name extracts the first
                 // member again and again, past what the byte budget counted.
-                isset($seen[$entryName])
+                isset($seen[$seenKey])
                 || str_starts_with($normalized, '/')
                 || str_contains($normalized, '../')
                 || preg_match('/^[A-Za-z]:/', $normalized)
@@ -898,7 +900,7 @@ final class Filesystem
                 return false;
             }
 
-            $seen[$entryName] = true;
+            $seen[$seenKey] = true;
         }
 
         if ($maxBytes !== null && !self::expandsWithin($zip, $maxBytes)) {

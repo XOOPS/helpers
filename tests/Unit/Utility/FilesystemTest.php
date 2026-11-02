@@ -1173,6 +1173,33 @@ final class FilesystemTest extends TestCase
         self::assertFileDoesNotExist($this->tmp . '/dest/dupA.txt');
     }
 
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function windowsAliasMemberProvider(): array
+    {
+        return ['backslash' => ['same\\file.txt'], 'case' => ['SAME/FILE.TXT']];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('windowsAliasMemberProvider')]
+    public function testUnzipRefusesMembersThatNameOneWindowsOutputFile(string $alias): void
+    {
+        $zipPath = $this->buildZip(['same/file.txt' => 'first', $alias => 'second']);
+        $dst = $this->tmp . '/dest';
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            self::assertFalse(Filesystem::unzip($zipPath, $dst));
+            self::assertFileDoesNotExist($dst . '/same/file.txt');
+
+            return;
+        }
+
+        // On POSIX both names are distinct files.
+        self::assertTrue(Filesystem::unzip($zipPath, $dst));
+        self::assertSame('first', file_get_contents($dst . '/same/file.txt'));
+        self::assertSame('second', file_get_contents($dst . '/' . $alias));
+    }
+
     public function testUnzipIntoAnExistingDestinationWithRealSubdirectories(): void
     {
         $dst = $this->tmp . '/dest';
