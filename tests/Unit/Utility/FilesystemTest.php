@@ -945,6 +945,20 @@ final class FilesystemTest extends TestCase
         self::assertFileDoesNotExist($target);
     }
 
+    public function testUnzipRefusesToWriteThroughADanglingJunctionInTheDestination(): void
+    {
+        // A junction whose target is gone is neither is_link() nor file_exists() to PHP.
+        $outside = $this->tmp . '/outside';
+        mkdir($outside, 0700);
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        $this->junctionOrSkip($outside, $dst . '/sub');
+        rmdir($outside);
+
+        self::assertFalse(Filesystem::unzip($this->buildZip(['sub/planted.txt' => 'payload']), $dst));
+        self::assertFileDoesNotExist($outside . '/planted.txt');
+    }
+
     public function testUnzipRefusesToWriteThroughAHardLinkInTheDestination(): void
     {
         // Extraction rewrites an existing file in place, so every other name for it changes too.
@@ -968,7 +982,10 @@ final class FilesystemTest extends TestCase
         mkdir($dst, 0700);
         file_put_contents($dst . '/file.txt', 'old');
         $zipPath = $this->buildZip(['file.txt' => 'payload']);
-        self::assertSame(1, lstat($dst . '/file.txt')['nlink']);
+        // Prime the cache with the canonical path unzip() checks, not a symlinked alias of it.
+        $realDst = realpath($dst);
+        self::assertNotFalse($realDst);
+        self::assertSame(1, lstat($realDst . DIRECTORY_SEPARATOR . 'file.txt')['nlink']);
 
         $outside = $this->tmp . '/outside.txt';
 

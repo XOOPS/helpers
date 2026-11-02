@@ -13,7 +13,9 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   changed that file too, and an existing FIFO passed the member's bytes to its reader. An
   existing non-directory output entry that is not a plain file with exactly one name now refuses the
   whole archive (`false`, nothing written), as `copyDirectory()` already did for hard
-  links. (CWE-59)
+  links. A Windows junction whose target is gone, which PHP reports as neither a link
+  nor an existing path, is refused the same way instead of being taken for a missing
+  directory. (CWE-59)
 - **`Utility\Filesystem::deleteDirectory()`** — a linked root (symlink or junction) was
   followed, so `deleteDirectory('/x/link')` emptied the link's target. It now returns
   `false` for a linked root, as `moveDirectory()` already did, and for a path ending in

@@ -975,8 +975,9 @@ final class Filesystem
                 return false;
             }
 
+            // lstat(), unlike file_exists() and is_link(), also sees a junction whose target is gone.
             if (!file_exists($path)) {
-                return true;
+                return @lstat($path) === false;
             }
 
             $real = realpath($path);
