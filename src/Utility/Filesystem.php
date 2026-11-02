@@ -830,9 +830,12 @@ final class Filesystem
      * Extract a zip archive to a directory.
      *
      * Refused (false, nothing written) when a member name escapes the destination or
-     * when a member would be written through a link already in the destination. The
-     * check runs before extraction: do not extract into a directory that an untrusted
-     * party can modify concurrently. Extract into a fresh private directory instead.
+     * when a member would be written through a link already in the destination, or into
+     * an existing file that has other names (hard link) or is not a plain file (FIFO,
+     * device). The check runs before extraction: do not extract into a directory that an
+     * untrusted party can modify concurrently (a link or hard link made in between is
+     * written through), and a mount point inside it is not detected. Extract into a fresh
+     * private directory instead.
      *
      * Also refused when the members decompress to more than $maxBytes in total (null: no
      * limit), so a small archive cannot expand into a full disk.
@@ -864,6 +867,9 @@ final class Filesystem
 
         $seen = [];
 
+        // link() leaves stat()'s cached link count stale; the checks below need fresh ones.
+        clearstatcache();
+
         // Validate each entry to prevent Zip Slip (path traversal)
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $entryName = $zip->getNameIndex($i);
@@ -874,11 +880,13 @@ final class Filesystem
 
             // Reject entries with traversal sequences or absolute paths before any filesystem operation
             $normalized = str_replace('\\', '/', $entryName);
+            // On Windows "a/b", "a\b" and "A/B" are one output file; the later member would replace the earlier.
+            $seenKey = $windows ? self::comparablePath($normalized) : $entryName;
 
             if (
                 // extractTo() opens members by name, so a repeated name extracts the first
                 // member again and again, past what the byte budget counted.
-                isset($seen[$entryName])
+                isset($seen[$seenKey])
                 || str_starts_with($normalized, '/')
                 || str_contains($normalized, '../')
                 || preg_match('/^[A-Za-z]:/', $normalized)
@@ -892,7 +900,7 @@ final class Filesystem
                 return false;
             }
 
-            $seen[$entryName] = true;
+            $seen[$seenKey] = true;
         }
 
         if ($maxBytes !== null && !self::expandsWithin($zip, $maxBytes)) {
@@ -944,7 +952,8 @@ final class Filesystem
      * A clean member name can still leave the destination through what already sits in
      * it: "sub" -> /etc carries "sub/passwd" outside, and a dangling "file.txt" link
      * creates its target. Each existing component of the output path must be a non-link
-     * that resolves under $realDest (which ends in a separator); the first missing one
+     * that resolves under $realDest (which ends in a separator), and an existing file must
+     * be a plain file with no other name (hard link); the first missing one
      * ends the walk, as extraction creates the rest as plain directories and files.
      */
     private static function isContainedOutputPath(string $realDest, string $member): bool
@@ -952,15 +961,9 @@ final class Filesystem
         $prefix = self::comparablePath($realDest);
         $path = substr($realDest, 0, -1);
         $parts = explode('/', $member);
-        $last = count($parts) - 1;
 
-        // ext/zip drops everything up to a directory named "<x>." ("a./b/c" is written
-        // as "b/c"), so the walk would check a path that is never written. Checked for every
-        // directory up front: the walk below stops at the first one that does not exist.
-        foreach ($parts as $i => $part) {
-            if ($i < $last && $part !== '.' && str_ends_with($part, '.')) {
-                return false;
-            }
+        if (self::hasDotEndingDirectory($parts)) {
+            return false;
         }
 
         foreach ($parts as $part) {
@@ -974,8 +977,9 @@ final class Filesystem
                 return false;
             }
 
+            // lstat(), unlike file_exists() and is_link(), also sees a junction whose target is gone.
             if (!file_exists($path)) {
-                return true;
+                return @lstat($path) === false;
             }
 
             $real = realpath($path);
@@ -983,9 +987,43 @@ final class Filesystem
             if ($real === false || !str_starts_with(self::comparablePath($real) . '/', $prefix)) {
                 return false;
             }
+
+            if (!is_dir($path) && !self::isSoleNameOfARegularFile($path)) {
+                return false;
+            }
         }
 
         return true;
+    }
+
+    /**
+     * ext/zip drops everything up to a directory named "<x>." ("a./b/c" is written as
+     * "b/c"), so the containment walk would check a path that is never written. Checked
+     * for every directory up front: the walk stops at the first one that does not exist.
+     *
+     * @param list<string> $parts
+     */
+    private static function hasDotEndingDirectory(array $parts): bool
+    {
+        foreach (array_slice($parts, 0, -1) as $part) {
+            if ($part !== '.' && str_ends_with($part, '.')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Extraction opens an existing entry read-write and writes into it: a file with other
+     * names (a hard link, possibly from outside) changes under those names too, and a FIFO
+     * or device passes the bytes elsewhere. Only a plain file with one name is overwritten.
+     */
+    private static function isSoleNameOfARegularFile(string $path): bool
+    {
+        $stat = @lstat($path);
+
+        return $stat !== false && ($stat['mode'] & 0170000) === 0100000 && $stat['nlink'] === 1;
     }
 
     /**

@@ -8,6 +8,16 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Security
 
+- **`Utility\Filesystem::unzip()`** — a member overwriting an existing file in the
+  destination wrote through it in place, so a hard link to a file outside the destination
+  changed that file too, and an existing FIFO passed the member's bytes to its reader. An
+  existing non-directory output entry that is not a plain file with exactly one name now refuses the
+  whole archive (`false`, nothing written), as `copyDirectory()` already did for hard
+  links. A Windows junction whose target is gone, which PHP reports as neither a link
+  nor an existing path, is refused the same way instead of being taken for a missing
+  directory. (CWE-59) On Windows, members whose names differ only in separator or case
+  (`a/b.txt`, `a\b.txt`, `A/B.TXT`) write one file, so the later replaced the earlier;
+  such an archive is now refused like one with a repeated name.
 - **`Utility\Filesystem::deleteDirectory()`** — a linked root (symlink or junction) was
   followed, so `deleteDirectory('/x/link')` emptied the link's target. It now returns
   `false` for a linked root, as `moveDirectory()` already did, and for a path ending in

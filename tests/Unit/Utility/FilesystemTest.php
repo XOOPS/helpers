@@ -945,6 +945,76 @@ final class FilesystemTest extends TestCase
         self::assertFileDoesNotExist($target);
     }
 
+    public function testUnzipRefusesToWriteThroughADanglingJunctionInTheDestination(): void
+    {
+        // A junction whose target is gone is neither is_link() nor file_exists() to PHP.
+        $outside = $this->tmp . '/outside';
+        mkdir($outside, 0700);
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        $this->junctionOrSkip($outside, $dst . '/sub');
+        rmdir($outside);
+        $zipPath = $this->buildZip(['first.txt' => 'valid', 'sub/planted.txt' => 'payload']);
+
+        // Refused in preflight: the valid member before the junction is not written either.
+        self::assertFalse(Filesystem::unzip($zipPath, $dst));
+        self::assertFileDoesNotExist($outside . '/planted.txt');
+        self::assertFileDoesNotExist($dst . '/first.txt');
+    }
+
+    public function testUnzipRefusesToWriteThroughAHardLinkInTheDestination(): void
+    {
+        // Extraction rewrites an existing file in place, so every other name for it changes too.
+        $outside = $this->tmp . '/outside.txt';
+        file_put_contents($outside, 'old');
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+
+        if (!function_exists('link') || !@link($outside, $dst . '/file.txt')) {
+            self::markTestSkipped('hard links not supported in this environment');
+        }
+
+        self::assertFalse(Filesystem::unzip($this->buildZip(['file.txt' => 'payload']), $dst));
+        self::assertSame('old', file_get_contents($outside));
+    }
+
+    public function testUnzipRefusesAHardLinkMadeAfterTheFileWasLastStatted(): void
+    {
+        // PHP caches the last lstat(); a link made after it must still be seen.
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        file_put_contents($dst . '/file.txt', 'old');
+        $zipPath = $this->buildZip(['file.txt' => 'payload']);
+        // Prime the cache with the canonical path unzip() checks, not a symlinked alias of it.
+        $realDst = realpath($dst);
+        self::assertNotFalse($realDst);
+        self::assertSame(1, lstat($realDst . DIRECTORY_SEPARATOR . 'file.txt')['nlink']);
+
+        $outside = $this->tmp . '/outside.txt';
+
+        if (!function_exists('link') || !@link($dst . '/file.txt', $outside)) {
+            self::markTestSkipped('hard links not supported in this environment');
+        }
+
+        self::assertFalse(Filesystem::unzip($zipPath, $dst));
+        self::assertSame('old', file_get_contents($outside));
+    }
+
+    public function testUnzipRefusesToWriteIntoAFifoInTheDestination(): void
+    {
+        // Extraction opens an existing entry for writing: a FIFO passes the bytes to its reader.
+        if (!function_exists('posix_mkfifo')) {
+            self::markTestSkipped('posix_mkfifo() not available');
+        }
+
+        $dst = $this->tmp . '/dest';
+        mkdir($dst, 0700);
+        self::assertTrue(posix_mkfifo($dst . '/file.txt', 0600));
+
+        // Refused before extraction opens it, so the test cannot block on the FIFO.
+        self::assertFalse(Filesystem::unzip($this->buildZip(['file.txt' => 'payload']), $dst));
+    }
+
     public function testUnzipWalksAnInnerDotComponentAsTheSamePath(): void
     {
         // ext/zip writes "a/./file.txt" as "a/file.txt", so the link there is found.
@@ -1103,12 +1173,40 @@ final class FilesystemTest extends TestCase
         self::assertFileDoesNotExist($this->tmp . '/dest/dupA.txt');
     }
 
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function windowsAliasMemberProvider(): array
+    {
+        return ['backslash' => ['same\\file.txt'], 'case' => ['SAME/FILE.TXT']];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('windowsAliasMemberProvider')]
+    public function testUnzipRefusesMembersThatNameOneWindowsOutputFile(string $alias): void
+    {
+        $zipPath = $this->buildZip(['same/file.txt' => 'first', $alias => 'second']);
+        $dst = $this->tmp . '/dest';
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            self::assertFalse(Filesystem::unzip($zipPath, $dst));
+            self::assertFileDoesNotExist($dst . '/same/file.txt');
+
+            return;
+        }
+
+        // On POSIX both names are distinct files.
+        self::assertTrue(Filesystem::unzip($zipPath, $dst));
+        self::assertSame('first', file_get_contents($dst . '/same/file.txt'));
+        self::assertSame('second', file_get_contents($dst . '/' . $alias));
+    }
+
     public function testUnzipIntoAnExistingDestinationWithRealSubdirectories(): void
     {
         $dst = $this->tmp . '/dest';
         mkdir($dst . '/sub', 0700, true);
         file_put_contents($dst . '/sub/old.txt', 'old');
-        $zipPath = $this->buildZip(['sub/old.txt' => 'new', 'sub/deeper/more.txt' => 'more']);
+        // A directory entry for an existing directory, and an existing plain file overwritten.
+        $zipPath = $this->buildZip(['sub/' => '', 'sub/old.txt' => 'new', 'sub/deeper/more.txt' => 'more']);
 
         self::assertTrue(Filesystem::unzip($zipPath, $dst));
         self::assertSame('new', file_get_contents($dst . '/sub/old.txt'));
