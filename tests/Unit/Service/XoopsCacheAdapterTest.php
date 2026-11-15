@@ -85,12 +85,17 @@ final class XoopsCacheAdapterTest extends TestCase
         \XoopsCache::$store['xmf_other'] = 'plain string';
         \XoopsCache::$store['xmf_damaged'] = 'xmf1:%%%';
         \XoopsCache::$store['xmf_garbled'] = 'xmf1:' . base64_encode('a:1:{i:0;s:9:"short";}');
+        // unserialize() warns but still returns PHP_INT_MAX here, on every supported PHP.
+        \XoopsCache::$store['xmf_overflow'] = 'xmf1:' . base64_encode('i:999999999999999999999999;');
+        \XoopsCache::$store['xmf_empty'] = 'xmf1:';
         \XoopsCache::$store['xmf_object'] = 'xmf1:' . base64_encode(serialize(new \ArrayObject([1])));
 
         self::assertNull($cache->get('old'));
         self::assertNull($cache->get('other'));
         self::assertNull($cache->get('damaged'));
         self::assertNull($cache->get('garbled'));
+        self::assertNull($cache->get('overflow'));
+        self::assertNull($cache->get('empty'));
         self::assertInstanceOf(\__PHP_Incomplete_Class::class, $cache->get('object'));
     }
 }

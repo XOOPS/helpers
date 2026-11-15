@@ -14,9 +14,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
   that exact `true`, but the file engine runs `stripslashes()` over every element of a
   cached array, so the marker came back as `'1'`. The same pass turns every scalar inside
   an array into a string and strips backslashes. Values are now stored as a single base64
-  string, which every engine returns unchanged, so types and backslashes survive. Objects
-  still come back as `__PHP_Incomplete_Class`, as with the file fallback. Entries written
-  by 1.1.1 and earlier read as a miss once and are then rewritten.
+  string, which every engine returns unchanged, so types and backslashes survive. It is
+  unserialized without classes, as the file engine and the adapter's file fallback already
+  did, so an object comes back as `__PHP_Incomplete_Class` on every native engine; on the
+  `apc` and `memcache` engines objects used to round-trip. Cache scalars and arrays. An
+  entry that `unserialize()` warns about is a miss, even when it still returns a value.
+  Entries written by 1.1.1 and earlier read as a miss once and are then rewritten.
 
 ## [1.1.1] — 2026-11-14
 

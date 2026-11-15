@@ -32,6 +32,10 @@ use Xoops\Helpers\Contracts\CacheInterface;
  *
  * The file cache stores serialized data with expiration timestamps
  * in XOOPS_VAR_PATH/caches/xmf/ (or a per-user system temp directory).
+ *
+ * Cache scalars and arrays. On the XoopsCache and file backends an object comes
+ * back as __PHP_Incomplete_Class, because cached data is unserialized without
+ * classes; only the APCu backend returns objects intact.
  */
 class XoopsCacheAdapter implements CacheInterface
 {
@@ -125,9 +129,16 @@ class XoopsCacheAdapter implements CacheInterface
             return null;
         }
 
-        // Same rule as the file fallback: cached data never instantiates objects, and
-        // a damaged entry is a miss rather than a warning on the page.
-        set_error_handler(static fn (): bool => true, E_WARNING | E_NOTICE);
+        // Same rule as the file fallback: cached data never instantiates objects. A
+        // damaged entry is a miss, not a warning on the page, and so is any entry
+        // unserialize() complains about, because it can still return a value then
+        // (an integer clamped to PHP_INT_MAX, a prefix with trailing bytes ignored).
+        $damaged = false;
+        set_error_handler(static function () use (&$damaged): bool {
+            $damaged = true;
+
+            return true;
+        }, E_WARNING | E_NOTICE);
 
         try {
             $value = unserialize($serialized, ['allowed_classes' => false]);
@@ -135,7 +146,11 @@ class XoopsCacheAdapter implements CacheInterface
             restore_error_handler();
         }
 
-        return $value === false && $serialized !== serialize(false) ? null : $value;
+        if ($damaged || ($value === false && $serialized !== serialize(false))) {
+            return null;
+        }
+
+        return $value;
     }
 
     public function has(string $key): bool
