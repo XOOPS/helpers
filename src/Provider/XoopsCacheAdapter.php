@@ -100,7 +100,8 @@ class XoopsCacheAdapter implements CacheInterface
     public function flush(): bool
     {
         if (class_exists('XoopsCache', false)) {
-            return \XoopsCache::clear();
+            // clear() is an instance method on the core class; read/write/delete are static.
+            return \XoopsCache::getInstance()->clear();
         }
 
         if ($this->apcuAvailable()) {
