@@ -36,7 +36,7 @@ final class XoopsCacheAdapterTest extends TestCase
     #[PreserveGlobalState(false)]
     public function testNativeBranchRoutesEveryOperationThroughXoopsCache(): void
     {
-        require dirname(__DIR__, 2) . '/fixtures/XoopsCache.php';
+        require_once dirname(__DIR__, 2) . '/fixtures/XoopsCache.php';
 
         $cache = new XoopsCacheAdapter();
 

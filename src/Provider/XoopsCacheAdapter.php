@@ -97,6 +97,10 @@ class XoopsCacheAdapter implements CacheInterface
         return $this->fileForget($prefixed);
     }
 
+    /**
+     * Clears the whole backing store, not only this adapter's prefixed keys: the
+     * shared XoopsCache or APCu cache, or the fallback cache directory.
+     */
     public function flush(): bool
     {
         if (class_exists('XoopsCache', false)) {
