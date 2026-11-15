@@ -7,3 +7,4 @@ parameters:
         - tests/bootstrap.php
     scanFiles:
         - stubs/xoops-stubs.php
+        - tests/fixtures/XoopsCache.php
