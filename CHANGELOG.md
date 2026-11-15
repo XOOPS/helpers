@@ -4,14 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project follows Semantic Versioning where practical.
 
-## [Unreleased]
+## [1.1.1] — 2026-11-14
 
 ### Fixed
 
 - **`Provider\XoopsCacheAdapter::flush()`** — called `XoopsCache::clear()` statically,
   but `clear()` is an instance method in XOOPS 2.5 and 2.7, so `flush()` threw `Error`
   whenever the native XOOPS cache was in use (`get`, `set` and `forget` were unaffected).
-  It now calls `XoopsCache::getInstance()->clear()`. PHPStan now checks the adapter
+  It now calls `XoopsCache::getInstance()->clear()`. As on the APCu branch, `flush()`
+  clears the whole backing store, not only this adapter's keys. PHPStan now checks the adapter
   against a `XoopsCache` test double with the core's static/instance split.
 
 ## [1.1.0] — 2026-11-02
