@@ -52,4 +52,45 @@ final class XoopsCacheAdapterTest extends TestCase
         self::assertSame([], \XoopsCache::$store);
         self::assertNull($cache->get('b'));
     }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testNativeBranchReturnsValuesWithTheirTypes(): void
+    {
+        require_once dirname(__DIR__, 2) . '/fixtures/XoopsCache.php';
+
+        $cache = new XoopsCacheAdapter();
+        $value = ['n' => 5, 'f' => 1.5, 'b' => true, 'off' => false, 'nil' => null, 'path' => 'C:\dir\file'];
+
+        self::assertTrue($cache->set('typed', $value));
+        self::assertSame($value, $cache->get('typed'));
+        self::assertTrue($cache->has('typed'));
+
+        self::assertTrue($cache->set('int', 0));
+        self::assertSame(0, $cache->get('int'));
+        self::assertTrue($cache->set('false', false));
+        self::assertFalse($cache->get('false'));
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testNativeBranchTreatsForeignOrDamagedEntriesAsMisses(): void
+    {
+        require_once dirname(__DIR__, 2) . '/fixtures/XoopsCache.php';
+
+        $cache = new XoopsCacheAdapter();
+
+        // The array shape written by 1.1.1 and earlier.
+        \XoopsCache::$store['xmf_old'] = ['__xmf_hit' => true, 'value' => 'v'];
+        \XoopsCache::$store['xmf_other'] = 'plain string';
+        \XoopsCache::$store['xmf_damaged'] = 'xmf1:%%%';
+        \XoopsCache::$store['xmf_garbled'] = 'xmf1:' . base64_encode('a:1:{i:0;s:9:"short";}');
+        \XoopsCache::$store['xmf_object'] = 'xmf1:' . base64_encode(serialize(new \ArrayObject([1])));
+
+        self::assertNull($cache->get('old'));
+        self::assertNull($cache->get('other'));
+        self::assertNull($cache->get('damaged'));
+        self::assertNull($cache->get('garbled'));
+        self::assertInstanceOf(\__PHP_Incomplete_Class::class, $cache->get('object'));
+    }
 }

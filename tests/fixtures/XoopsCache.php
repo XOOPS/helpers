@@ -23,6 +23,11 @@ declare(strict_types=1);
  * split as class/cache/xoopscache.php in XOOPS 2.5 and 2.7: read(), write(),
  * delete() and getInstance() are static, clear() is an instance method.
  *
+ * read() also copies what the core file engine (class/cache/file.php) does to
+ * an array: it runs stripslashes() over every element, so each scalar comes back
+ * as a string (true as '1', 5 as '5', null as '') with one level of backslashes
+ * removed. A string is returned unchanged.
+ *
  * Not loaded by the test bootstrap: defining XoopsCache switches every
  * XoopsCacheAdapter onto its native branch, so tests require it in a separate
  * process. PHPStan scans it to check the adapter's calls against that split.
@@ -48,7 +53,15 @@ class XoopsCache
 
     public static function read(string $key, ?string $config = null): mixed
     {
-        return self::$store[$key] ?? false;
+        $data = self::$store[$key] ?? false;
+
+        if (is_array($data)) {
+            array_walk_recursive($data, static function (mixed &$leaf): void {
+                $leaf = stripslashes((string) $leaf);
+            });
+        }
+
+        return $data;
     }
 
     public static function delete(string $key, ?string $config = null): bool
