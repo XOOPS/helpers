@@ -32,9 +32,16 @@ use Xoops\Helpers\Contracts\CacheInterface;
  *
  * The file cache stores serialized data with expiration timestamps
  * in XOOPS_VAR_PATH/caches/xmf/ (or a per-user system temp directory).
+ *
+ * Cache scalars and arrays. On the XoopsCache and file backends an object comes
+ * back as __PHP_Incomplete_Class, because cached data is unserialized without
+ * classes; only the APCu backend returns objects intact.
  */
 class XoopsCacheAdapter implements CacheInterface
 {
+    /** Starts every native-cache entry this adapter writes; base64(serialize($value)) follows. */
+    private const NATIVE_TAG = 'xmf1:';
+
     public function __construct(
         private readonly string $prefix = 'xmf_',
     ) {}
@@ -44,18 +51,7 @@ class XoopsCacheAdapter implements CacheInterface
         $prefixed = $this->prefix . $key;
 
         if (class_exists('XoopsCache', false)) {
-            $payload = \XoopsCache::read($prefixed);
-
-            if (
-                $payload === false
-                || !is_array($payload)
-                || !array_key_exists('value', $payload)
-                || ($payload['__xmf_hit'] ?? false) !== true
-            ) {
-                return null;
-            }
-
-            return $payload['value'];
+            return $this->decodeNative(\XoopsCache::read($prefixed));
         }
 
         if ($this->apcuAvailable()) {
@@ -72,7 +68,7 @@ class XoopsCacheAdapter implements CacheInterface
         $prefixed = $this->prefix . $key;
 
         if (class_exists('XoopsCache', false)) {
-            return \XoopsCache::write($prefixed, ['__xmf_hit' => true, 'value' => $value], $ttl);
+            return \XoopsCache::write($prefixed, self::NATIVE_TAG . base64_encode(serialize($value)), $ttl);
         }
 
         if ($this->apcuAvailable()) {
@@ -113,6 +109,48 @@ class XoopsCacheAdapter implements CacheInterface
         }
 
         return $this->fileFlush();
+    }
+
+    /**
+     * The core file engine runs stripslashes() over every element of a cached
+     * array, turning each scalar into a string, so the value travels as one
+     * base64 string, which every engine returns unchanged. Anything else (another
+     * writer's entry, the array shape of 1.1.1 and earlier, damaged data) is a miss.
+     */
+    private function decodeNative(mixed $payload): mixed
+    {
+        if (!is_string($payload) || !str_starts_with($payload, self::NATIVE_TAG)) {
+            return null;
+        }
+
+        $serialized = base64_decode(substr($payload, strlen(self::NATIVE_TAG)), true);
+
+        if ($serialized === false) {
+            return null;
+        }
+
+        // Same rule as the file fallback: cached data never instantiates objects. A
+        // damaged entry is a miss, not a warning on the page, and so is any entry
+        // unserialize() complains about, because it can still return a value then
+        // (an integer clamped to PHP_INT_MAX, a prefix with trailing bytes ignored).
+        $damaged = false;
+        set_error_handler(static function () use (&$damaged): bool {
+            $damaged = true;
+
+            return true;
+        }, E_WARNING | E_NOTICE);
+
+        try {
+            $value = unserialize($serialized, ['allowed_classes' => false]);
+        } finally {
+            restore_error_handler();
+        }
+
+        if ($damaged || ($value === false && $serialized !== serialize(false))) {
+            return null;
+        }
+
+        return $value;
     }
 
     public function has(string $key): bool

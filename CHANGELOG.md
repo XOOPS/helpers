@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project follows Semantic Versioning where practical.
 
+## [Unreleased]
+
+### Fixed
+
+- **`Provider\XoopsCacheAdapter::get()`** — on the native XOOPS cache with the core file
+  engine (the default), every read was a miss, so `Cache::remember()` recomputed its value
+  on each call. The adapter stored an array marked `'__xmf_hit' => true` and accepted only
+  that exact `true`, but the file engine runs `stripslashes()` over every element of a
+  cached array, so the marker came back as `'1'`. The same pass turns every scalar inside
+  an array into a string and strips backslashes. Values are now stored as a single base64
+  string, which every engine returns unchanged, so types and backslashes survive. It is
+  unserialized without classes, as the file engine and the adapter's file fallback already
+  did, so an object comes back as `__PHP_Incomplete_Class` on every native engine; on the
+  `apc` and `memcache` engines objects used to round-trip. Cache scalars and arrays. An
+  entry that `unserialize()` warns about is a miss, even when it still returns a value.
+  Entries written by 1.1.1 and earlier read as a miss once and are then rewritten.
+
 ## [1.1.1] — 2026-11-14
 
 ### Fixed
