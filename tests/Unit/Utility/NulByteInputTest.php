@@ -70,6 +70,9 @@ final class NulByteInputTest extends TestCase
         yield 'putJson' => [static fn(string $t) => Filesystem::putJson("$t/$n", []), false];
         yield 'mimeType' => [static fn(string $t) => Filesystem::mimeType("$t/$n"), null];
         yield 'isImage' => [static fn(string $t) => Filesystem::isImage("$t/$n"), false];
+        // The extension alone would pass: no file can have this name, so it is no image.
+        yield 'isImage with an image extension' => [static fn(string $t) => Filesystem::isImage("$t/$n.png"), false];
+        yield 'extension' => [static fn(string $t) => Filesystem::extension("$t/$n.png"), ''];
         yield 'size' => [static fn(string $t) => Filesystem::size("$t/$n"), false];
         yield 'isWritableRecursive' => [static fn(string $t) => Filesystem::isWritableRecursive("$t/$n"), false];
         yield 'mkdir' => [static fn(string $t) => Filesystem::mkdir("$t/$n"), false];

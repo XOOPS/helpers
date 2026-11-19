@@ -161,7 +161,7 @@ final class Filesystem
      */
     public static function extension(string $path): string
     {
-        return strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        return self::hasNul($path) ? '' : strtolower(pathinfo($path, PATHINFO_EXTENSION));
     }
 
     /**
