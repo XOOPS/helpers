@@ -132,16 +132,18 @@ final class Path
      */
     public static function languageFile(string $dirname, string $language, string $file): string
     {
+        // No file has a NUL byte in its name, and is_file() throws on one as of PHP 8.6.
+        $isFile = static fn(string $path): bool => !str_contains($path, "\0") && is_file($path);
         $primary = self::module($dirname, 'language/' . $language . '/' . $file);
 
-        if (is_file($primary)) {
+        if ($isFile($primary)) {
             return $primary;
         }
 
         if ($language !== 'english') {
             $fallback = self::module($dirname, 'language/english/' . $file);
 
-            if (is_file($fallback)) {
+            if ($isFile($fallback)) {
                 return $fallback;
             }
         }

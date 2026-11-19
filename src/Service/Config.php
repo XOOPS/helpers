@@ -248,8 +248,8 @@ final class Config
      */
     private static function loadFromFile(string $module): array
     {
-        // Prevent path traversal attacks
-        if (preg_match('/[\/\\\\]|\.\./', $module)) {
+        // Prevent path traversal attacks; a NUL byte names no file (file_exists() throws on it as of PHP 8.6)
+        if (preg_match('/[\/\\\\\x00]|\.\./', $module)) {
             return [];
         }
 

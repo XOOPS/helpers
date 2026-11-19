@@ -106,9 +106,15 @@ final class Environment
 
     /**
      * Get an environment variable with a default fallback.
+     *
+     * A name holding a NUL byte names no variable (getenv() throws on it as of PHP 8.6).
      */
     public static function get(string $key, string $default = ''): string
     {
+        if (str_contains($key, "\0")) {
+            return $default;
+        }
+
         $value = getenv($key);
 
         if ($value === false) {

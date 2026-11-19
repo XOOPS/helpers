@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project follows Semantic Versioning where practical.
 
+## [Unreleased]
+
+### Fixed
+
+- **NUL bytes in paths, query strings and variable names** — PHP 8.6 throws a `ValueError`
+  from every function that takes a path, from `parse_str()` and from `getenv()` when the
+  argument holds a NUL byte; `fopen()`, `mkdir()`, `rename()`, `realpath()` and
+  `ZipArchive::open()` already did. The helpers now report such input as the failure
+  they document instead of letting the error through, on every PHP version:
+  - `Utility\Filesystem`: every method returns its failure value (`false`, `null` for
+    `readJson()` and `mimeType()`, `''` for `extension()`) for a path with a NUL byte, so
+    `isImage()` is `false` for one whatever its extension. `delete()` returns `true` as
+    for any path that does not exist.
+  - `Utility\Data::fromQueryString()` returns an empty array for a string with a raw NUL
+    byte. Up to PHP 8.5 it returned the pairs before the NUL, the last one cut off. An
+    encoded `%00` is still decoded.
+  - `Utility\Environment::get()` returns the default for such a name, so `has()` is
+    `false` and `require()` throws its `RuntimeException`.
+  - `Service\Path::languageFile()` and the file fallback of `Service\Config` treat such a
+    name as a missing file.
+
 ## [1.1.2] — 2026-11-15
 
 ### Fixed
