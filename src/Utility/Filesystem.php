@@ -37,6 +37,18 @@ final class Filesystem
     public const UNZIP_MAX_BYTES = 1024 ** 3;
 
     /**
+     * Whether a path holds a NUL byte, so that no file can be named by it.
+     *
+     * Every public method checks its paths with this first and reports a failure:
+     * the filesystem functions throw a ValueError on such a path, all of them
+     * as of PHP 8.6.
+     */
+    private static function hasNul(string ...$paths): bool
+    {
+        return str_contains(implode('', $paths), "\0");
+    }
+
+    /**
      * Read a file in chunks, calling a callback for each chunk.
      *
      * Return false from the callback to stop reading.
@@ -47,7 +59,7 @@ final class Filesystem
      */
     public static function readChunked(string $path, int $chunkSize, callable $callback): bool
     {
-        if ($chunkSize < 1) {
+        if ($chunkSize < 1 || self::hasNul($path)) {
             return false;
         }
 
@@ -92,7 +104,7 @@ final class Filesystem
      */
     public static function readJson(string $path): ?array
     {
-        $json = @file_get_contents($path);
+        $json = self::hasNul($path) ? false : @file_get_contents($path);
 
         if ($json === false) {
             return null;
@@ -114,7 +126,7 @@ final class Filesystem
      */
     public static function putJson(string $path, mixed $data, int $flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES): bool
     {
-        $json = json_encode($data, $flags);
+        $json = self::hasNul($path) ? false : json_encode($data, $flags);
 
         if ($json === false) {
             return false;
@@ -128,7 +140,7 @@ final class Filesystem
      */
     public static function mimeType(string $path): ?string
     {
-        if (!file_exists($path) || !function_exists('finfo_open')) {
+        if (self::hasNul($path) || !file_exists($path) || !function_exists('finfo_open')) {
             return null;
         }
 
@@ -176,9 +188,9 @@ final class Filesystem
      */
     public static function isWritableRecursive(string $directory): bool
     {
-        // is_dir() first: it is false for '' (which realpath() turns into the working
-        // directory) and for a NUL byte (on which realpath() throws).
-        if (!is_dir($directory)) {
+        // is_dir() before realpath(): it is false for '', which realpath() turns into the
+        // working directory.
+        if (self::hasNul($directory) || !is_dir($directory)) {
             return false;
         }
 
@@ -222,6 +234,10 @@ final class Filesystem
      */
     public static function mkdir(string $directory, int $mode = 0775, bool $recursive = true): bool
     {
+        if (self::hasNul($directory)) {
+            return false;
+        }
+
         if (is_dir($directory)) {
             return true;
         }
@@ -236,7 +252,7 @@ final class Filesystem
      */
     public static function copy(string $source, string $destination): bool
     {
-        if (!is_file($source)) {
+        if (self::hasNul($source, $destination) || !is_file($source)) {
             return false;
         }
 
@@ -258,7 +274,7 @@ final class Filesystem
     public static function delete(string $path): bool
     {
         // lstat(), unlike file_exists() and is_link(), also sees a junction whose target is gone.
-        if (@lstat($path) === false) {
+        if (self::hasNul($path) || @lstat($path) === false) {
             return true;
         }
 
@@ -297,7 +313,7 @@ final class Filesystem
      */
     public static function move(string $source, string $destination): bool
     {
-        if (!is_file($source)) {
+        if (self::hasNul($source, $destination) || !is_file($source)) {
             return false;
         }
 
@@ -414,7 +430,7 @@ final class Filesystem
     public static function copyDirectory(string $source, string $destination): bool
     {
         // Checked on the paths as given: realpath('') is the working directory.
-        if (!is_dir($source) || $destination === '') {
+        if (self::hasNul($source, $destination) || !is_dir($source) || $destination === '') {
             return false;
         }
 
@@ -678,8 +694,7 @@ final class Filesystem
      */
     private static function unlinkedRealDirectory(string $directory): string|false
     {
-        // Before any realpath(): is_dir() returns false on a NUL byte, realpath() throws.
-        if (!is_dir($directory)) {
+        if (self::hasNul($directory) || !is_dir($directory)) {
             return false;
         }
 
@@ -757,7 +772,7 @@ final class Filesystem
      */
     public static function zip(string $directory, string $zipPath, ?array $include = null, ?array $exclude = null): bool
     {
-        if (!is_dir($directory) || !class_exists(ZipArchive::class)) {
+        if (self::hasNul($directory, $zipPath) || !is_dir($directory) || !class_exists(ZipArchive::class)) {
             return false;
         }
 
@@ -842,7 +857,7 @@ final class Filesystem
      */
     public static function unzip(string $zipPath, string $destination, ?int $maxBytes = self::UNZIP_MAX_BYTES): bool
     {
-        if (!class_exists(ZipArchive::class)) {
+        if (self::hasNul($zipPath, $destination) || !class_exists(ZipArchive::class)) {
             return false;
         }
 
@@ -1085,7 +1100,7 @@ final class Filesystem
      */
     public static function size(string $path): int|false
     {
-        return @filesize($path);
+        return self::hasNul($path) ? false : @filesize($path);
     }
 
     /**

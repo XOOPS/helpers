@@ -95,11 +95,18 @@ final class Data
     /**
      * Parse a query string into an associative array.
      *
+     * A string holding a raw NUL byte is not a query string and gives an empty array;
+     * parse_str() cut it at the NUL up to PHP 8.5 and throws as of 8.6. An encoded
+     * one (%00) is decoded like any other byte.
+     *
      * @return array<string, string>
      */
     public static function fromQueryString(string $queryString): array
     {
         $result = [];
+        if (str_contains($queryString, "\0")) {
+            return $result;
+        }
         parse_str($queryString, $result);
 
         return $result;
