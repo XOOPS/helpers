@@ -1427,4 +1427,33 @@ final class FilesystemTest extends TestCase
         self::assertTrue($result);
         self::assertSame('custom guard', file_get_contents($guard));
     }
+
+    // ── MIME type ───────────────────────────────────────────
+
+    public function testMimeTypeRaisesNoDeprecation(): void
+    {
+        if (!function_exists('finfo_open')) {
+            self::markTestSkipped('The fileinfo extension is not loaded.');
+        }
+
+        $file = $this->tmp . '/note.txt';
+        file_put_contents($file, "plain text\n");
+
+        // finfo_close() is deprecated as of PHP 8.5.
+        $deprecations = [];
+        set_error_handler(static function (int $errno, string $errstr) use (&$deprecations): bool {
+            $deprecations[] = $errstr;
+
+            return true;
+        }, E_DEPRECATED);
+
+        try {
+            $mime = Filesystem::mimeType($file);
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame('text/plain', $mime);
+        self::assertSame([], $deprecations);
+    }
 }
