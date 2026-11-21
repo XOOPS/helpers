@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project follows Semantic Versioning where practical.
 
+## [Unreleased]
+
+### Fixed
+
+- **`Filesystem::mimeType()`** no longer calls `finfo_close()`, which raises a deprecation
+  notice on PHP 8.5 and later. The call had no effect: the `finfo` object is freed when it
+  goes out of scope.
+
 ## [1.1.3] — 2026-11-20
 
 ### Fixed
